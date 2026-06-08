@@ -57,7 +57,12 @@ public sealed class TrayContext : ApplicationContext
             catch (Exception ex) { _engine.Log("Agent-Start fehlgeschlagen: " + ex.Message); }
         }
 
-        if (_app.AutostartMirror) _engine.Start();
+        if (_app.AutostartMirror)
+        {
+            var err = _engine.Preflight();
+            if (err == null) _engine.Start();
+            else _engine.Log("Autostart-Mirror übersprungen: " + err);
+        }
 
         // Menue-/Tooltip-Status aktuell halten
         _uiTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -72,7 +77,21 @@ public sealed class TrayContext : ApplicationContext
 
     private void ToggleMirror()
     {
-        if (_engine.IsRunning) _engine.Stop(); else _engine.Start();
+        if (_engine.IsRunning)
+        {
+            _engine.Stop();
+        }
+        else
+        {
+            var err = _engine.Preflight();
+            if (err != null)
+            {
+                _tray.ShowBalloonTip(4000, "RitschyMirror", err + ".", ToolTipIcon.Warning);
+                RefreshUi();
+                return;
+            }
+            _engine.Start();
+        }
         RefreshUi();
     }
 

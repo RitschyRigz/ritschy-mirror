@@ -2,10 +2,19 @@ using System.Runtime.InteropServices;
 
 namespace RitschyMirror;
 
+/// <summary>Stabile Monitor-Metadaten zu einem GDI-Display (\\.\DISPLAYx).</summary>
+internal readonly struct MonitorMeta
+{
+    public readonly string Friendly;    // EDID-Name, z.B. „AORUS FO32U2P" (leer = unbekannt)
+    public readonly string DevicePath;  // stabiler Geräte-Pfad \\?\DISPLAY#...#{guid} (leer = unbekannt)
+    public MonitorMeta(string friendly, string devicePath) { Friendly = friendly; DevicePath = devicePath; }
+}
+
 /// <summary>
 /// Liefert die „echten" Monitor-Namen (EDID/Hersteller, z.B. „LG ULTRAGEAR", „Elgato 4K X")
 /// statt der nackten GDI-Namen (\\.\DISPLAYx) — über die Windows CCD-API
-/// (QueryDisplayConfig + DisplayConfigGetDeviceInfo). Mapping: \\.\DISPLAYx → Friendly-Name.
+/// (QueryDisplayConfig + DisplayConfigGetDeviceInfo). Mapping: \\.\DISPLAYx → Friendly-Name +
+/// stabiler monitorDevicePath (für identitäts-stabile Monitor-Auswahl beim Umstecken).
 /// Bei Fehlern leere Map (Aufrufer fällt auf den GDI-Namen zurück).
 /// </summary>
 internal static class MonitorNames
@@ -14,9 +23,19 @@ internal static class MonitorNames
     private const uint GET_SOURCE_NAME = 1;
     private const uint GET_TARGET_NAME = 2;
 
+    /// <summary>GDI-Name (\\.\DISPLAYx) → Friendly-Name (Kurzform, Abwärtskompatibilität).</summary>
     public static Dictionary<string, string> GetFriendlyNames()
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in GetMonitorMeta())
+            if (!string.IsNullOrWhiteSpace(kv.Value.Friendly)) map[kv.Key] = kv.Value.Friendly;
+        return map;
+    }
+
+    /// <summary>GDI-Name (\\.\DISPLAYx) → {Friendly, DevicePath}.</summary>
+    public static Dictionary<string, MonitorMeta> GetMonitorMeta()
+    {
+        var map = new Dictionary<string, MonitorMeta>(StringComparer.OrdinalIgnoreCase);
         try
         {
             if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, out uint pathCount, out uint modeCount) != 0)
@@ -44,7 +63,8 @@ internal static class MonitorNames
                 tgt.header.id = paths[i].targetInfo.id;
                 if (DisplayConfigGetDeviceInfo(ref tgt) != 0) continue;
                 string friendly = ToStr(tgt.monitorFriendlyDeviceName);
-                if (!string.IsNullOrWhiteSpace(friendly)) map[gdi] = friendly;
+                string path = ToStr(tgt.monitorDevicePath);
+                map[gdi] = new MonitorMeta(friendly, path);
             }
         }
         catch { /* leer = Fallback auf GDI-Namen */ }

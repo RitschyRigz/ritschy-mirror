@@ -54,12 +54,25 @@ public sealed class SettingsForm : Form
         _loading = false;
 
         var start = new Button { Text = "Start / Stop", Location = new Point(12, 9), Width = 120, Height = 30 };
-        start.Click += (_, _) => { if (_engine.IsRunning) _engine.Stop(); else _engine.Start(); };
+        start.Click += (_, _) => { if (_engine.IsRunning) _engine.Stop(); else StartWithCheck(); };
         var restart = new Button { Text = "Neustart (Struktur)", Location = new Point(140, 9), Width = 160, Height = 30 };
-        restart.Click += (_, _) => { if (_engine.IsRunning) _engine.Restart(); else _engine.Start(); };
+        restart.Click += (_, _) => { _engine.Stop(); StartWithCheck(); };
         var close = new Button { Text = "Schließen", Location = new Point(308, 9), Width = 110, Height = 30 };
         close.Click += (_, _) => Close();
         bottom.Controls.AddRange(new Control[] { start, restart, close });
+    }
+
+    /// <summary>Start mit Vorab-Check — bei fehlendem Quell-/Ziel-Monitor klare Meldung statt
+    /// still den falschen Bildschirm zu spiegeln.</summary>
+    private void StartWithCheck()
+    {
+        var err = _engine.Preflight();
+        if (err != null)
+        {
+            MessageBox.Show(this, err + ".", "RitschyMirror", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        _engine.Start();
     }
 
     // ── Persistenz ────────────────────────────────────────────────────────
@@ -137,21 +150,29 @@ public sealed class SettingsForm : Form
         Lbl("Quell-Monitor");
         _srcCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(CX, _y), Width = 330 };
         _srcCombo.Items.AddRange(names);
-        if (_cfg.SourceDisplay < names.Length) _srcCombo.SelectedIndex = _cfg.SourceDisplay;
-        _srcCombo.SelectedIndexChanged += (_, _) => { if (!_loading) { _cfg.SourceDisplay = _srcCombo.SelectedIndex; SaveCfg(); } };
+        int siSel = FindByIdentity(_cfg.SourceKey, _cfg.SourceLabel, _cfg.SourceDisplay);
+        if (siSel >= 0) _srcCombo.SelectedIndex = siSel;
+        _srcCombo.SelectedIndexChanged += (_, _) => { if (!_loading) StoreSelection(_srcCombo, src: true); };
         _panel.Controls.Add(_srcCombo);
         _y += ROW;
 
         Lbl("Ziel-Monitor");
         _dstCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(CX, _y), Width = 330 };
         _dstCombo.Items.AddRange(names);
-        if (_cfg.TargetDisplay < names.Length) _dstCombo.SelectedIndex = _cfg.TargetDisplay;
-        _dstCombo.SelectedIndexChanged += (_, _) => { if (!_loading) { _cfg.TargetDisplay = _dstCombo.SelectedIndex; SaveCfg(); } };
+        int diSel = FindByIdentity(_cfg.TargetKey, _cfg.TargetLabel, _cfg.TargetDisplay);
+        if (diSel >= 0) _dstCombo.SelectedIndex = diSel;
+        _dstCombo.SelectedIndexChanged += (_, _) => { if (!_loading) StoreSelection(_dstCombo, src: false); };
         _panel.Controls.Add(_dstCombo);
         var refresh = new Button { Text = "↻", Location = new Point(CX + 338, _y - 1), Width = 32, Height = 26 };
         refresh.Click += (_, _) => RefreshDisplays();
         _panel.Controls.Add(refresh);
         _y += ROW;
+
+        // Hinweis, falls eine gespeicherte Auswahl gerade nicht verbunden ist (bleibt gespeichert).
+        if (siSel < 0 && HasIdentity(_cfg.SourceKey, _cfg.SourceLabel))
+            Note($"⚠ Gespeicherte Quelle \"{LabelOf(_cfg.SourceKey, _cfg.SourceLabel)}\" aktuell nicht verbunden.");
+        if (diSel < 0 && HasIdentity(_cfg.TargetKey, _cfg.TargetLabel))
+            Note($"⚠ Gespeichertes Ziel \"{LabelOf(_cfg.TargetKey, _cfg.TargetLabel)}\" aktuell nicht verbunden.");
 
         ComboRow("Layout-Modus", new[] { "fit", "stretch", "top_strip", "crop_region" }, _cfg.LayoutMode, s => _cfg.LayoutMode = s);
         ComboRow("Ausgabe-Modus", new[] { "windowed", "borderless", "fullscreen_block", "exclusive" }, _cfg.ResolveOutputMode(), s => _cfg.OutputMode = s);
@@ -209,16 +230,55 @@ public sealed class SettingsForm : Form
     private string[] DisplayNames() =>
         _displays.Select(d => $"{d.Index}: {d.DisplayName}  {d.Resolution}{(d.Hdr ? " HDR" : "")}  [{d.Adapter}]").ToArray();
 
+    private static bool HasIdentity(string key, string label) =>
+        !string.IsNullOrWhiteSpace(key) || !string.IsNullOrWhiteSpace(label);
+
+    private static string LabelOf(string key, string label) =>
+        !string.IsNullOrWhiteSpace(label) ? label : key;
+
+    /// <summary>Combo-Index für die gespeicherte Auswahl: per Key → eindeutigem Label →
+    /// (nur ohne Identität) Index. -1 = Identität gesetzt, aber kein passendes Display da.</summary>
+    private int FindByIdentity(string key, string label, int index)
+    {
+        if (HasIdentity(key, label))
+        {
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                int i = _displays.FindIndex(d => string.Equals(d.Key, key, StringComparison.OrdinalIgnoreCase));
+                if (i >= 0) return i;
+            }
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                var m = _displays.FindAll(d => string.Equals(d.Friendly, label, StringComparison.OrdinalIgnoreCase));
+                if (m.Count == 1) return _displays.IndexOf(m[0]);
+            }
+            return -1;
+        }
+        return (index >= 0 && index < _displays.Count) ? index : -1;
+    }
+
+    /// <summary>Auswahl persistieren: Index (Abwärtskompat) UND stabile Identität (key+label).</summary>
+    private void StoreSelection(ComboBox combo, bool src)
+    {
+        int i = combo.SelectedIndex;
+        if (i < 0 || i >= _displays.Count) return;
+        var d = _displays[i];
+        if (src) { _cfg.SourceDisplay = i; _cfg.SourceKey = d.Key; _cfg.SourceLabel = d.Friendly; }
+        else { _cfg.TargetDisplay = i; _cfg.TargetKey = d.Key; _cfg.TargetLabel = d.Friendly; }
+        SaveCfg();
+    }
+
     private void RefreshDisplays()
     {
         _displays = MirrorEngine.EnumerateDisplays();
         var names = DisplayNames();
         _loading = true;
-        int s = _srcCombo.SelectedIndex, d = _dstCombo.SelectedIndex;
         _srcCombo.Items.Clear(); _srcCombo.Items.AddRange(names);
         _dstCombo.Items.Clear(); _dstCombo.Items.AddRange(names);
-        if (s >= 0 && s < names.Length) _srcCombo.SelectedIndex = s;
-        if (d >= 0 && d < names.Length) _dstCombo.SelectedIndex = d;
+        int s = FindByIdentity(_cfg.SourceKey, _cfg.SourceLabel, _cfg.SourceDisplay);
+        int d = FindByIdentity(_cfg.TargetKey, _cfg.TargetLabel, _cfg.TargetDisplay);
+        _srcCombo.SelectedIndex = s >= 0 ? s : -1;
+        _dstCombo.SelectedIndex = d >= 0 ? d : -1;
         _loading = false;
     }
 

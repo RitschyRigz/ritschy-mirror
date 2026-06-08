@@ -42,8 +42,15 @@ public sealed class MirrorConfig
 
     // ── Struktur (Neustart noetig) ───────────────────────────────────────
     [JsonPropertyName("output_bit_depth")] public int OutputBitDepth { get; set; } = 10;
+    // Monitor-Auswahl: bevorzugt über stabile Identität (key = monitorDevicePath, label = EDID-Name),
+    // damit Umstecken / geänderte Enumerations-Reihenfolge die Auswahl NICHT verwürfelt. Der Index
+    // bleibt als Abwärtskompat-Fallback (alte Configs ohne key) erhalten.
     [JsonPropertyName("source_display")]   public int SourceDisplay { get; set; } = 0;
     [JsonPropertyName("target_display")]   public int TargetDisplay { get; set; } = 0;
+    [JsonPropertyName("source_key")]       public string SourceKey { get; set; } = "";
+    [JsonPropertyName("source_label")]     public string SourceLabel { get; set; } = "";
+    [JsonPropertyName("target_key")]       public string TargetKey { get; set; } = "";
+    [JsonPropertyName("target_label")]     public string TargetLabel { get; set; } = "";
     // output_mode: "windowed" | "borderless" | "fullscreen_block" (Maus-Sperre) | "exclusive".
     // Leer = aus dem alten `windowed`-Flag abgeleitet (Abwaerts-Kompatibilitaet).
     [JsonPropertyName("output_mode")]      public string OutputMode { get; set; } = "";
@@ -80,7 +87,9 @@ public sealed class MirrorConfig
     };
     public static readonly HashSet<string> StructKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "output_bit_depth", "source_display", "target_display", "output_mode", "windowed",
+        "output_bit_depth", "source_display", "target_display",
+        "source_key", "source_label", "target_key", "target_label",
+        "output_mode", "windowed",
         "window_width", "window_height", "output_width", "output_height",
     };
     public static IEnumerable<string> AllKeys => LiveKeys.Concat(StructKeys);

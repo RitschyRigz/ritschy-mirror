@@ -12,6 +12,7 @@ public sealed class DisplayInfo
     public int Index { get; set; }
     public string Name { get; set; } = "";        // GDI-Name, z.B. \\.\DISPLAY2
     public string Friendly { get; set; } = "";     // EDID-Name, z.B. „LG ULTRAGEAR" (leer = unbekannt)
+    public string Key { get; set; } = "";          // stabile Identität (monitorDevicePath, sonst Fallback)
     public string Resolution { get; set; } = "";
     public bool Hdr { get; set; }
     public string Adapter { get; set; } = "";
@@ -82,6 +83,62 @@ public sealed class MirrorEngine
 
     public void Restart() { Stop(); Start(); }
 
+    // ── Stabile Monitor-Identität ─────────────────────────────────────────
+    /// <summary>Stabiler Schlüssel für einen Monitor: bevorzugt der CCD-DevicePath, sonst
+    /// EDID-Name, sonst GDI-Name. Wird in der Config als source_key/target_key abgelegt.</summary>
+    public static string MakeKey(string devicePath, string friendly, string gdiName)
+    {
+        if (!string.IsNullOrWhiteSpace(devicePath)) return "path:" + devicePath;
+        if (!string.IsNullOrWhiteSpace(friendly)) return "edid:" + friendly;
+        return "gdi:" + gdiName;
+    }
+
+    /// <summary>
+    /// Löst eine gespeicherte Monitor-Auswahl gegen die aktuell vorhandenen Displays auf.
+    /// Reihenfolge: exakter key (DevicePath) → eindeutiger label (EDID-Name) → (nur wenn KEINE
+    /// Identität gespeichert ist) der alte Index als Abwärtskompat-Fallback. Ist eine Identität
+    /// gesetzt, passt aber kein Monitor ⇒ idx=-1 + Klartext-Fehler, damit NICHT still der falsche
+    /// Bildschirm gespiegelt wird.
+    /// </summary>
+    public static (int idx, string error) ResolveSelection(
+        string key, string label, int index,
+        IReadOnlyList<(string Key, string Label)> displays, string role)
+    {
+        if (displays.Count == 0) return (-1, "Keine Displays gefunden");
+        bool hasIdentity = !string.IsNullOrWhiteSpace(key) || !string.IsNullOrWhiteSpace(label);
+        if (hasIdentity)
+        {
+            if (!string.IsNullOrWhiteSpace(key))
+                for (int i = 0; i < displays.Count; i++)
+                    if (string.Equals(displays[i].Key, key, StringComparison.OrdinalIgnoreCase)) return (i, "");
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                int found = -1, count = 0;
+                for (int i = 0; i < displays.Count; i++)
+                    if (string.Equals(displays[i].Label, label, StringComparison.OrdinalIgnoreCase)) { found = i; count++; }
+                if (count == 1) return (found, "");
+            }
+            string name = string.IsNullOrWhiteSpace(label) ? key : label;
+            return (-1, $"{role}-Monitor '{name}' nicht verbunden");
+        }
+        return (Math.Clamp(index, 0, displays.Count - 1), ""); // alte Config ohne Identität
+    }
+
+    /// <summary>Vorab-Check (Tray/GUI): sind die konfigurierten Quelle+Ziel aktuell auflösbar?
+    /// null = ok, sonst Klartext-Fehler. Startet nichts.</summary>
+    public string? Preflight()
+    {
+        var displays = EnumerateDisplays();
+        if (displays.Count == 0) return "Keine Displays gefunden";
+        var cfg = MirrorConfig.Load(ConfigPath);
+        var ids = displays.Select(d => (Key: d.Key, Label: d.Friendly)).ToList();
+        var (_, se) = ResolveSelection(cfg.SourceKey, cfg.SourceLabel, cfg.SourceDisplay, ids, "Quell");
+        if (se.Length != 0) return se;
+        var (_, de) = ResolveSelection(cfg.TargetKey, cfg.TargetLabel, cfg.TargetDisplay, ids, "Ziel");
+        if (de.Length != 0) return de;
+        return null;
+    }
+
     // ── Render-Thread ─────────────────────────────────────────────────────
     private void RenderThreadMain()
     {
@@ -97,9 +154,10 @@ public sealed class MirrorEngine
         var factory = CreateDXGIFactory2<IDXGIFactory2>(false);
 
         // ALLE Adapter + Outputs enumerieren (Quelle/Ziel koennen an versch. Adaptern haengen).
+        var meta = MonitorNames.GetMonitorMeta();  // GDI-Name → {Friendly, DevicePath}
         var adapters = new List<IDXGIAdapter1>();
         var displays = new List<(IDXGIAdapter1 Adapter, IDXGIOutput6 Output,
-                                 int L, int T, int R, int B, bool Hdr, string Name)>();
+                                 int L, int T, int R, int B, bool Hdr, string Name, string Friendly, string Key)>();
         for (uint a = 0; ; a++)
         {
             if (factory.EnumAdapters1(a, out IDXGIAdapter1? ad).Failure || ad is null) break;
@@ -113,15 +171,31 @@ public sealed class MirrorEngine
                 bool hdr = d.ColorSpace == ColorSpaceType.RgbFullG2084NoneP2020
                         || d.ColorSpace == ColorSpaceType.RgbFullG10NoneP709;
                 var dc = d.DesktopCoordinates;
-                displays.Add((ad, o6, dc.Left, dc.Top, dc.Right, dc.Bottom, hdr, $"{d.DeviceName} [{adName}]"));
+                meta.TryGetValue(d.DeviceName, out var mm);
+                string friendly = mm.Friendly ?? "";
+                string key = MakeKey(mm.DevicePath ?? "", friendly, d.DeviceName);
+                displays.Add((ad, o6, dc.Left, dc.Top, dc.Right, dc.Bottom, hdr, $"{d.DeviceName} [{adName}]", friendly, key));
                 outp.Dispose();
-                Log($"  Display {displays.Count - 1}: {d.DeviceName}  {dc.Right - dc.Left}x{dc.Bottom - dc.Top}  HDR={hdr}  [{adName}]");
+                Log($"  Display {displays.Count - 1}: {d.DeviceName} ({(friendly.Length > 0 ? friendly : "?")})  {dc.Right - dc.Left}x{dc.Bottom - dc.Top}  HDR={hdr}  [{adName}]");
             }
         }
         if (displays.Count == 0) { Log("Keine Displays gefunden."); LastError = "Keine Displays gefunden"; factory.Dispose(); return; }
 
-        int srcIdx = Math.Clamp(cfg.SourceDisplay, 0, displays.Count - 1);
-        int dstIdx = Math.Clamp(cfg.TargetDisplay, 0, displays.Count - 1);
+        // Quelle/Ziel über stabile Identität auflösen (Umstecken-fest); fehlt der konfigurierte
+        // Monitor → sauberer Abbruch mit Klartext, statt still den falschen zu spiegeln.
+        var ids = displays.Select(x => (Key: x.Key, Label: x.Friendly)).ToList();
+        var (srcIdx, srcErr) = ResolveSelection(cfg.SourceKey, cfg.SourceLabel, cfg.SourceDisplay, ids, "Quell");
+        var (dstIdx, dstErr) = ResolveSelection(cfg.TargetKey, cfg.TargetLabel, cfg.TargetDisplay, ids, "Ziel");
+        string selErr = srcErr.Length != 0 ? srcErr : dstErr;
+        if (selErr.Length != 0)
+        {
+            Log("Start abgebrochen: " + selErr);
+            LastError = selErr;
+            foreach (var disp in displays) disp.Output.Dispose();
+            foreach (var ad in adapters) ad.Dispose();
+            factory.Dispose();
+            return;
+        }
         var src = displays[srcIdx];
         var dst = displays[dstIdx];
         string mode = cfg.ResolveOutputMode();
@@ -227,7 +301,7 @@ public sealed class MirrorEngine
     public static List<DisplayInfo> EnumerateDisplays()
     {
         var result = new List<DisplayInfo>();
-        var friendly = MonitorNames.GetFriendlyNames();  // \\.\DISPLAYx → EDID-Name
+        var meta = MonitorNames.GetMonitorMeta();  // \\.\DISPLAYx → {Friendly, DevicePath}
         IDXGIFactory2? factory = null;
         try
         {
@@ -244,11 +318,14 @@ public sealed class MirrorEngine
                     bool hdr = d.ColorSpace == ColorSpaceType.RgbFullG2084NoneP2020
                             || d.ColorSpace == ColorSpaceType.RgbFullG10NoneP709;
                     var dc = d.DesktopCoordinates;
+                    meta.TryGetValue(d.DeviceName, out var mm);
+                    string friendlyName = mm.Friendly ?? "";
                     result.Add(new DisplayInfo
                     {
                         Index = result.Count,
                         Name = d.DeviceName,
-                        Friendly = friendly.GetValueOrDefault(d.DeviceName, ""),
+                        Friendly = friendlyName,
+                        Key = MakeKey(mm.DevicePath ?? "", friendlyName, d.DeviceName),
                         Resolution = $"{dc.Right - dc.Left}x{dc.Bottom - dc.Top}",
                         Hdr = hdr,
                         Adapter = adName,
