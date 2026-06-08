@@ -10,7 +10,8 @@ namespace RitschyMirror;
 public sealed class DisplayInfo
 {
     public int Index { get; set; }
-    public string Name { get; set; } = "";
+    public string Name { get; set; } = "";        // GDI-Name, z.B. \\.\DISPLAY2
+    public string Friendly { get; set; } = "";     // EDID-Name, z.B. „LG ULTRAGEAR" (leer = unbekannt)
     public string Resolution { get; set; } = "";
     public bool Hdr { get; set; }
     public string Adapter { get; set; } = "";
@@ -18,6 +19,9 @@ public sealed class DisplayInfo
     public int Top { get; set; }
     public int Right { get; set; }
     public int Bottom { get; set; }
+
+    /// <summary>Anzeigename: Friendly bevorzugt, sonst GDI-Name.</summary>
+    public string DisplayName => string.IsNullOrWhiteSpace(Friendly) ? Name : Friendly;
 }
 
 /// <summary>
@@ -222,6 +226,7 @@ public sealed class MirrorEngine
     public static List<DisplayInfo> EnumerateDisplays()
     {
         var result = new List<DisplayInfo>();
+        var friendly = MonitorNames.GetFriendlyNames();  // \\.\DISPLAYx → EDID-Name
         IDXGIFactory2? factory = null;
         try
         {
@@ -242,6 +247,7 @@ public sealed class MirrorEngine
                     {
                         Index = result.Count,
                         Name = d.DeviceName,
+                        Friendly = friendly.GetValueOrDefault(d.DeviceName, ""),
                         Resolution = $"{dc.Right - dc.Left}x{dc.Bottom - dc.Top}",
                         Hdr = hdr,
                         Adapter = adName,

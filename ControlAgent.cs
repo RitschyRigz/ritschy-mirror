@@ -137,8 +137,8 @@ public sealed class ControlAgent
                 foreach (var d in MirrorEngine.EnumerateDisplays())
                     arr.Add(new JsonObject
                     {
-                        ["index"] = d.Index, ["name"] = d.Name, ["resolution"] = d.Resolution,
-                        ["hdr"] = d.Hdr, ["adapter"] = d.Adapter,
+                        ["index"] = d.Index, ["name"] = d.Name, ["friendly"] = d.Friendly,
+                        ["resolution"] = d.Resolution, ["hdr"] = d.Hdr, ["adapter"] = d.Adapter,
                     });
                 WriteJson(ctx, 200, arr);
                 break;

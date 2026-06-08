@@ -1,7 +1,7 @@
 <#
-  install.ps1 — RitschyMirror lokal installieren (auf JEDEM Windows-PC).
+  install.ps1 - RitschyMirror lokal installieren (auf JEDEM Windows-PC).
   Kopiert das Publish-Ergebnis nach %LOCALAPPDATA%\RitschyMirror, legt Start-Menue- +
-  (optional) Autostart-Verknuepfung an und reserviert — wenn als Admin gestartet —
+  (optional) Autostart-Verknuepfung an und reserviert - wenn als Admin gestartet -
   URL-ACL + Firewall fuer den HTTP-Agenten (damit das Cockpit ihn uebers Netz erreicht).
 
   Aufruf:
@@ -9,6 +9,8 @@
     powershell -ExecutionPolicy Bypass -File install.ps1 -AgentPort 8790 # anderer Port
     powershell -ExecutionPolicy Bypass -File install.ps1 -NoAutostart    # ohne Login-Autostart
   Fuer URL-ACL/Firewall (Netz-Erreichbarkeit) als Administrator ausfuehren.
+
+  ASCII-only (Windows PowerShell 5.1 liest .ps1 ohne BOM in der ANSI-Codepage).
 #>
 [CmdletBinding()]
 param(
@@ -20,12 +22,12 @@ $ErrorActionPreference = "Stop"
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src = Join-Path $dir "publish"
 $exeSrc = Join-Path $src "RitschyMirror.exe"
-if (-not (Test-Path $exeSrc)) { throw "Kein publish\RitschyMirror.exe — erst publish.ps1 ausfuehren." }
+if (-not (Test-Path $exeSrc)) { throw "Kein publish/RitschyMirror.exe - erst publish.ps1 ausfuehren." }
 
 $dest = Join-Path $env:LOCALAPPDATA "RitschyMirror"
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 
-# Dateien kopieren — vorhandene Config bei Updates NICHT ueberschreiben.
+# Dateien kopieren - vorhandene Config bei Updates NICHT ueberschreiben.
 $keep = @("mirror_config.json", "app_settings.json")
 Get-ChildItem $src -File | ForEach-Object {
     $target = Join-Path $dest $_.Name
@@ -46,7 +48,7 @@ if (-not $NoAutostart) {
     Write-Host "Login-Autostart eingerichtet." -ForegroundColor Green
 }
 
-# Netz-Erreichbarkeit des HTTP-Agenten (braucht Admin) — sonst faellt er auf localhost zurueck.
+# Netz-Erreichbarkeit des HTTP-Agenten (braucht Admin) - sonst Fallback auf localhost.
 if (-not $NoNetwork) {
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
     if ($isAdmin) {
@@ -57,11 +59,11 @@ if (-not $NoNetwork) {
             Write-Host "URL-ACL + Firewall fuer $url gesetzt." -ForegroundColor Green
         } catch { Write-Host "URL-ACL/Firewall fehlgeschlagen: $_" -ForegroundColor Yellow }
     } else {
-        Write-Host "Hinweis: nicht als Admin — Agent ist nur via localhost erreichbar." -ForegroundColor Yellow
+        Write-Host "Hinweis: nicht als Admin - Agent ist nur via localhost erreichbar." -ForegroundColor Yellow
         Write-Host "  Fuer Cockpit-Fernsteuerung install.ps1 EINMAL als Admin laufen lassen (URL-ACL+Firewall)." -ForegroundColor Yellow
     }
 }
 
 Write-Host ""
-Write-Host "Starten: `"$exe`"  → Tray-Icon → Einstellungen." -ForegroundColor Cyan
-Write-Host "Cockpit: Connector 'gaming_pc' → Feld 'agent_port' = $AgentPort (host = IP dieses PCs)." -ForegroundColor Cyan
+Write-Host "Starten: `"$exe`"  -> Tray-Icon -> Einstellungen." -ForegroundColor Cyan
+Write-Host "Cockpit: Connector 'gaming_pc' -> Feld 'agent_port' = $AgentPort (host = IP dieses PCs)." -ForegroundColor Cyan

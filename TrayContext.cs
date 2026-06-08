@@ -22,7 +22,7 @@ public sealed class TrayContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _uiTimer;
     private SettingsForm? _settings;
 
-    public TrayContext()
+    public TrayContext(string[]? args = null)
     {
         _baseDir = AppContext.BaseDirectory;
         _appSettingsPath = Path.Combine(_baseDir, "app_settings.json");
@@ -64,6 +64,10 @@ public sealed class TrayContext : ApplicationContext
         _uiTimer.Tick += (_, _) => RefreshUi();
         _uiTimer.Start();
         RefreshUi();
+
+        // Direkt die Einstellungen oeffnen (z.B. eigene „Einstellungen"-Verknuepfung / Test).
+        if (args != null && Array.Exists(args, a => string.Equals(a, "--settings", StringComparison.OrdinalIgnoreCase)))
+            OpenSettings();
     }
 
     private void ToggleMirror()
