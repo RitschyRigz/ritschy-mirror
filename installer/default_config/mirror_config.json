@@ -1,0 +1,27 @@
+{
+  "tonemap_enabled": true,
+  "operator": "bt2390",
+  "source_peak_nits": 1000.0,
+  "target_paperwhite": 200.0,
+  "exposure": 0.0,
+  "saturation": 1.0,
+  "contrast": 1.0,
+  "gamma": 1.0,
+
+  "layout_mode": "fit",
+  "content_offset_y": 0,
+  "crop_x": 0.0,
+  "crop_y": 0.0,
+  "crop_w": 1.0,
+  "crop_h": 1.0,
+  "show_cursor": false,
+
+  "output_bit_depth": 10,
+  "source_display": 0,
+  "target_display": 0,
+  "output_mode": "windowed",
+  "windowed": true,
+  "window_width": 1280,
+  "window_height": 720,
+  "vsync": true
+}

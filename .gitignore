@@ -1,6 +1,18 @@
+# Build output
 bin/
 obj/
 publish/
 *.user
-*.png
+
+# Release artifacts (installer is attached to GitHub Releases, not committed)
+installer/out/
+
+# Runtime / user state (created next to the exe at runtime)
 mirror.log
+app_settings.json
+
+# Local dev captures / generated previews
+smoketest*.png
+assets/icon_preview.png
+
+# Documentation images are tracked (docs/icon.png, docs/screenshot-*.png)
