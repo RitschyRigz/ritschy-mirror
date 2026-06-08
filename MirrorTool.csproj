@@ -13,6 +13,11 @@
     <SelfContained>false</SelfContained>
     <AssemblyName>RitschyMirror</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>RitschyMirror</Product>
+    <Company>RitschyRigz</Company>
+    <Description>Screen Mirror Tool for capture cards (HDR-to-SDR tonemapping)</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +30,13 @@
     <None Update="mirror_config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Icon fuer Tray + Fenster (LogicalName fest, damit AppIcon.Load es findet). -->
+    <EmbeddedResource Include="assets\app.ico">
+      <LogicalName>app.ico</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

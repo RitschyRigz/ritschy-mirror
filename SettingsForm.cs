@@ -36,6 +36,7 @@ public sealed class SettingsForm : Form
         _cfg = MirrorConfig.Load(engine.ConfigPath);
 
         Text = "RitschyMirror — Einstellungen";
+        Icon = AppIcon.Load(small: false);
         ClientSize = new Size(620, 780);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(520, 420);

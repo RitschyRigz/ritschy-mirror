@@ -39,7 +39,7 @@ public sealed class TrayContext : ApplicationContext
 
         _tray = new NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = AppIcon.Load(),
             Text = "RitschyMirror",
             Visible = true,
             ContextMenuStrip = menu,
