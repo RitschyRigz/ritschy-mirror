@@ -28,8 +28,10 @@ public sealed class Renderer : IDisposable
     private ID3D11RenderTargetView _rtv = null!;
     private readonly ID3D11VertexShader _vs;
     private readonly ID3D11PixelShader _ps;
+    private readonly ID3D11PixelShader _psCursor;
     private readonly ID3D11SamplerState _sampler;
     private readonly ID3D11Buffer _cbuffer;
+    private readonly ID3D11BlendState _blend;
 
     public int Width { get; private set; }
     public int Height { get; private set; }
@@ -66,9 +68,15 @@ public sealed class Renderer : IDisposable
         if (vsBlob is null) throw new Exception("VS-Compile: " + (vsErr?.AsString() ?? "unbekannt"));
         Compiler.Compile(Shaders.Hlsl, "PSMain", "tonemap.hlsl", "ps_5_0", out var psBlob, out var psErr);
         if (psBlob is null) throw new Exception("PS-Compile: " + (psErr?.AsString() ?? "unbekannt"));
+        Compiler.Compile(Shaders.Hlsl, "PSCursor", "tonemap.hlsl", "ps_5_0", out var pcBlob, out var pcErr);
+        if (pcBlob is null) throw new Exception("PSCursor-Compile: " + (pcErr?.AsString() ?? "unbekannt"));
         _vs = _device.CreateVertexShader(vsBlob.AsBytes());
         _ps = _device.CreatePixelShader(psBlob.AsBytes());
-        vsBlob.Dispose(); psBlob.Dispose();
+        _psCursor = _device.CreatePixelShader(pcBlob.AsBytes());
+        vsBlob.Dispose(); psBlob.Dispose(); pcBlob.Dispose();
+
+        // Alpha-Blend fuer den Cursor (Straight-Alpha ueber das fertige Bild).
+        _blend = _device.CreateBlendState(new BlendDescription(Blend.SourceAlpha, Blend.InverseSourceAlpha));
 
         _sampler = _device.CreateSamplerState(new SamplerDescription
         {
@@ -94,9 +102,11 @@ public sealed class Renderer : IDisposable
     /// <summary>
     /// Ein Frame zeichnen. Platzierung (Viewport) + Quell-Crop kommen aus
     /// <see cref="MirrorConfig.LayoutMode"/> — siehe <see cref="ComputeLayout"/>.
+    /// Optional wird der Maus-Cursor (separat von DXGI geliefert) einkomponiert.
     /// </summary>
-    public void Render(ID3D11ShaderResourceView srv, int srcW, int srcH, MirrorConfig cfg, bool inputIsHdr)
+    public void Render(DuplicationCapture cap, MirrorConfig cfg)
     {
+        int srcW = cap.Width, srcH = cap.Height;
         var (vp, cropMinX, cropMinY, cropMaxX, cropMaxY) = ComputeLayout(srcW, srcH, cfg);
 
         var p = new ShaderParams
@@ -109,7 +119,7 @@ public sealed class Renderer : IDisposable
             Gamma = cfg.Gamma,
             OperatorId = cfg.OperatorId,
             TonemapEnabled = cfg.TonemapEnabled ? 1 : 0,
-            InputIsHdr = inputIsHdr ? 1 : 0,
+            InputIsHdr = cap.InputIsHdr ? 1 : 0,
             OutputIsHdr = 0, // SDR-Ausgabe (Passthrough-HDR ist Phase 2)
             CropMinX = cropMinX, CropMinY = cropMinY,
             CropMaxX = cropMaxX, CropMaxY = cropMaxY,
@@ -118,15 +128,40 @@ public sealed class Renderer : IDisposable
 
         _ctx.ClearRenderTargetView(_rtv, new Color4(0f, 0f, 0f, 1f));
 
-        _ctx.RSSetViewport(vp);
+        // gemeinsame Pipeline-States
         _ctx.OMSetRenderTargets(_rtv);
         _ctx.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         _ctx.VSSetShader(_vs);
-        _ctx.PSSetShader(_ps);
-        _ctx.PSSetShaderResource(0, srv);
         _ctx.PSSetSampler(0, _sampler);
         _ctx.PSSetConstantBuffer(0, _cbuffer);
+
+        // Haupt-Pass (opak)
+        _ctx.OMSetBlendState(null);
+        _ctx.RSSetViewport(vp);
+        _ctx.PSSetShader(_ps);
+        _ctx.PSSetShaderResource(0, cap.Srv);
         _ctx.Draw(3, 0);
+
+        // Cursor-Pass (alpha) — Quell-Cursorposition in den Ausgabe-Viewport mappen.
+        if (cfg.ShowCursor && cap.CursorVisible && cap.CursorSrv != null && cap.CursorW > 0)
+        {
+            float crW = cropMaxX - cropMinX, crH = cropMaxY - cropMinY;
+            float nx = ((float)cap.CursorX / srcW - cropMinX) / crW;
+            float ny = ((float)cap.CursorY / srcH - cropMinY) / crH;
+            float nw = ((float)cap.CursorW / srcW) / crW;
+            float nh = ((float)cap.CursorH / srcH) / crH;
+            if (nx < 1f && ny < 1f && nx + nw > 0f && ny + nh > 0f) // zumindest teils sichtbar
+            {
+                var cvp = new Viewport(vp.X + nx * vp.Width, vp.Y + ny * vp.Height,
+                                       nw * vp.Width, nh * vp.Height, 0f, 1f);
+                _ctx.OMSetBlendState(_blend);
+                _ctx.RSSetViewport(cvp);
+                _ctx.PSSetShader(_psCursor);
+                _ctx.PSSetShaderResource(0, cap.CursorSrv);
+                _ctx.Draw(3, 0);
+                _ctx.OMSetBlendState(null);
+            }
+        }
     }
 
     /// <summary>
@@ -211,7 +246,9 @@ public sealed class Renderer : IDisposable
     {
         _rtv?.Dispose();
         _cbuffer?.Dispose();
+        _blend?.Dispose();
         _sampler?.Dispose();
+        _psCursor?.Dispose();
         _ps?.Dispose();
         _vs?.Dispose();
         _swapChain?.Dispose();

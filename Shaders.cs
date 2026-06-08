@@ -119,5 +119,11 @@ float4 PSMain(VSOut i) : SV_Target
         return float4(col * TargetPaperwhite / 80.0, 1); // zurueck nach scRGB
     return float4(LinearToSrgb(col), 1);
 }
+
+// Maus-Cursor: bereits dekodierte BGRA-Textur (display-referred) direkt mit Alpha ausgeben.
+float4 PSCursor(VSOut i) : SV_Target
+{
+    return Src.Sample(Smp, i.uv);
+}
 ";
 }

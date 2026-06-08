@@ -187,6 +187,7 @@ public sealed class MirrorEngine
                     cfg.Vsync = nc.Vsync;
                     cfg.LayoutMode = nc.LayoutMode;
                     cfg.CropX = nc.CropX; cfg.CropY = nc.CropY; cfg.CropW = nc.CropW; cfg.CropH = nc.CropH;
+                    cfg.ShowCursor = nc.ShowCursor;
                     Log("Config neu geladen (Live-Parameter).");
                 }
             }
@@ -200,7 +201,7 @@ public sealed class MirrorEngine
 
             if (capture.Srv != null)
             {
-                renderer.Render(capture.Srv, capture.Width, capture.Height, cfg, capture.InputIsHdr);
+                renderer.Render(capture, cfg);
                 renderer.Present(cfg.Vsync);
             }
         }

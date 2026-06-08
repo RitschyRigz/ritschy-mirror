@@ -36,6 +36,8 @@ public sealed class MirrorConfig
     [JsonPropertyName("crop_y")]           public float CropY { get; set; } = 0f;
     [JsonPropertyName("crop_w")]           public float CropW { get; set; } = 1f;
     [JsonPropertyName("crop_h")]           public float CropH { get; set; } = 1f;
+    // Maus-Cursor in die Ausgabe komponieren (Desktop Duplication liefert ihn separat).
+    [JsonPropertyName("show_cursor")]      public bool ShowCursor { get; set; } = false;
     [JsonPropertyName("vsync")]            public bool Vsync { get; set; } = true;
 
     // ── Struktur (Neustart noetig) ───────────────────────────────────────
@@ -74,7 +76,7 @@ public sealed class MirrorConfig
     {
         "tonemap_enabled", "operator", "source_peak_nits", "target_paperwhite",
         "exposure", "saturation", "contrast", "gamma", "content_offset_y", "vsync",
-        "layout_mode", "crop_x", "crop_y", "crop_w", "crop_h",
+        "layout_mode", "crop_x", "crop_y", "crop_w", "crop_h", "show_cursor",
     };
     public static readonly HashSet<string> StructKeys = new(StringComparer.OrdinalIgnoreCase)
     {

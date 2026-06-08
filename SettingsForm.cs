@@ -172,6 +172,7 @@ public sealed class SettingsForm : Form
         FloatRow("Weißpunkt (nits)", 80f, 400f, _cfg.TargetPaperwhite, "0", v => _cfg.TargetPaperwhite = v);
         FloatRow("Quell-Spitze (nits)", 200f, 4000f, _cfg.SourcePeakNits, "0", v => _cfg.SourcePeakNits = v);
         NumRow("Vertikal-Offset (px)", -2160, 2160, _cfg.ContentOffsetY, 2, 0, v => _cfg.ContentOffsetY = (int)v);
+        CheckRow("Mauszeiger anzeigen", _cfg.ShowCursor, v => _cfg.ShowCursor = v);
         CheckRow("VSync", _cfg.Vsync, v => _cfg.Vsync = v);
     }
 

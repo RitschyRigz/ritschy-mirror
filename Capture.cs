@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using SharpGen.Runtime;
@@ -7,6 +8,10 @@ namespace RitschyMirror;
 /// <summary>
 /// DXGI Desktop Duplication eines Outputs. Liefert pro Frame eine Shader-lesbare
 /// Kopie (R16G16B16A16_Float) als SRV. HDR-faehig via DuplicateOutput1 mit FP16.
+///
+/// Der Maus-Cursor ist im Desktop-Bild NICHT enthalten (DXGI liefert ihn separat:
+/// Position + Shape). Wird hier optional eingelesen und als BGRA-Textur bereitgestellt,
+/// damit der Renderer ihn auf Wunsch einkomponiert (output.show_cursor).
 /// </summary>
 public sealed class DuplicationCapture : IDisposable
 {
@@ -15,10 +20,22 @@ public sealed class DuplicationCapture : IDisposable
     private ID3D11Texture2D? _copyTex;
     private ID3D11ShaderResourceView? _srv;
 
+    // Cursor
+    private ID3D11Texture2D? _cursorTex;
+    private ID3D11ShaderResourceView? _cursorSrv;
+    private byte[]? _shapeBuf;
+
     public int Width { get; private set; }
     public int Height { get; private set; }
     public bool InputIsHdr { get; private set; }
     public ID3D11ShaderResourceView? Srv => _srv;
+
+    public bool CursorVisible { get; private set; }
+    public int CursorX { get; private set; }
+    public int CursorY { get; private set; }
+    public int CursorW { get; private set; }
+    public int CursorH { get; private set; }
+    public ID3D11ShaderResourceView? CursorSrv => _cursorSrv;
 
     public DuplicationCapture(ID3D11Device device, IDXGIOutput6 output)
     {
@@ -26,7 +43,6 @@ public sealed class DuplicationCapture : IDisposable
         var desc = output.Description1;
         Width = desc.DesktopCoordinates.Right - desc.DesktopCoordinates.Left;
         Height = desc.DesktopCoordinates.Bottom - desc.DesktopCoordinates.Top;
-        // HDR aktiv? scRGB (G10) oder HDR10 (G2084) Colorspace am Output.
         InputIsHdr = desc.ColorSpace == ColorSpaceType.RgbFullG10NoneP709
                   || desc.ColorSpace == ColorSpaceType.RgbFullG2084NoneP2020;
         _dup = output.DuplicateOutput1(_device, 1, new[] { Format.R16G16B16A16_Float });
@@ -35,7 +51,7 @@ public sealed class DuplicationCapture : IDisposable
     /// <summary>True wenn ein neues Frame geholt+kopiert wurde; false bei Timeout.</summary>
     public bool TryAcquire(ID3D11DeviceContext ctx, int timeoutMs = 16)
     {
-        Result r = _dup.AcquireNextFrame((uint)timeoutMs, out OutduplFrameInfo _, out IDXGIResource? resource);
+        Result r = _dup.AcquireNextFrame((uint)timeoutMs, out OutduplFrameInfo frameInfo, out IDXGIResource? resource);
         if (r == Vortice.DXGI.ResultCode.WaitTimeout)
             return false;
         r.CheckError();
@@ -45,6 +61,7 @@ public sealed class DuplicationCapture : IDisposable
             using var tex = resource!.QueryInterface<ID3D11Texture2D>();
             EnsureTarget(tex.Description);
             ctx.CopyResource(_copyTex!, tex);
+            UpdateCursor(frameInfo);
         }
         finally
         {
@@ -73,6 +90,90 @@ public sealed class DuplicationCapture : IDisposable
         Height = (int)src.Height;
     }
 
+    // ── Cursor: Position + Shape einlesen ─────────────────────────────────
+    private void UpdateCursor(OutduplFrameInfo fi)
+    {
+        try
+        {
+            if (fi.LastMouseUpdateTime != 0)
+            {
+                CursorVisible = fi.PointerPosition.Visible;
+                CursorX = fi.PointerPosition.Position.X;
+                CursorY = fi.PointerPosition.Position.Y;
+            }
+            if (fi.PointerShapeBufferSize == 0)
+                return;
+
+            int size = (int)fi.PointerShapeBufferSize;
+            if (_shapeBuf == null || _shapeBuf.Length < size) _shapeBuf = new byte[size];
+            var handle = GCHandle.Alloc(_shapeBuf, GCHandleType.Pinned);
+            try
+            {
+                _dup.GetFramePointerShape((uint)size, handle.AddrOfPinnedObject(), out uint _, out OutduplPointerShapeInfo info);
+                BuildCursorTexture(_shapeBuf, info);
+            }
+            finally { handle.Free(); }
+        }
+        catch { /* Cursor optional — bei Fehlern einfach nicht zeichnen */ }
+    }
+
+    private void BuildCursorTexture(byte[] buf, OutduplPointerShapeInfo info)
+    {
+        int type = (int)info.Type;   // 1=MONOCHROME, 2=COLOR, 4=MASKED_COLOR
+        int w = (int)info.Width;
+        int h = (type == 1) ? (int)info.Height / 2 : (int)info.Height;
+        int pitch = (int)info.Pitch;
+        if (w <= 0 || h <= 0) return;
+
+        var bgra = new byte[w * h * 4];
+        if (type == 2 || type == 4) // COLOR / MASKED_COLOR
+        {
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int s = y * pitch + x * 4;
+                    int d = (y * w + x) * 4;
+                    bgra[d] = buf[s]; bgra[d + 1] = buf[s + 1]; bgra[d + 2] = buf[s + 2];
+                    bgra[d + 3] = (type == 2) ? buf[s + 3] : (byte)255; // MASKED_COLOR → opak
+                }
+        }
+        else // MONOCHROME (AND-Maske + XOR-Maske, 1bpp)
+        {
+            int xorOff = h * pitch;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int bytePos = x / 8, bit = 7 - (x % 8);
+                    int a = (buf[y * pitch + bytePos] >> bit) & 1;
+                    int xo = (buf[xorOff + y * pitch + bytePos] >> bit) & 1;
+                    int d = (y * w + x) * 4;
+                    if (a == 0 && xo == 0) { bgra[d + 3] = 255; }                                   // schwarz opak
+                    else if (a == 0 && xo == 1) { bgra[d] = bgra[d + 1] = bgra[d + 2] = bgra[d + 3] = 255; } // weiss opak
+                    else if (a == 1 && xo == 0) { bgra[d + 3] = 0; }                                 // transparent
+                    else { bgra[d + 3] = 255; }                                                       // invert → schwarz opak (Naeherung)
+                }
+        }
+
+        _cursorSrv?.Dispose();
+        _cursorTex?.Dispose();
+        var desc = new Texture2DDescription
+        {
+            Width = (uint)w, Height = (uint)h, MipLevels = 1, ArraySize = 1,
+            Format = Format.B8G8R8A8_UNorm, SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default, BindFlags = BindFlags.ShaderResource,
+            CPUAccessFlags = CpuAccessFlags.None, MiscFlags = ResourceOptionFlags.None,
+        };
+        var pin = GCHandle.Alloc(bgra, GCHandleType.Pinned);
+        try
+        {
+            var data = new SubresourceData(pin.AddrOfPinnedObject(), (uint)(w * 4));
+            _cursorTex = _device.CreateTexture2D(desc, new[] { data });
+            _cursorSrv = _device.CreateShaderResourceView(_cursorTex);
+            CursorW = w; CursorH = h;
+        }
+        finally { pin.Free(); }
+    }
+
     /// <summary>Duplication nach AccessLost neu aufsetzen.</summary>
     public void Recreate(IDXGIOutput6 output)
     {
@@ -82,6 +183,8 @@ public sealed class DuplicationCapture : IDisposable
 
     public void Dispose()
     {
+        _cursorSrv?.Dispose();
+        _cursorTex?.Dispose();
         _srv?.Dispose();
         _copyTex?.Dispose();
         _dup.Dispose();
