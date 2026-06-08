@@ -15,7 +15,8 @@
 #define MyAppPublisher "RitschyRigz"
 #define MyAppURL "https://github.com/RitschyRigz/ritschy-mirror"
 #define MyAppExeName "RitschyMirror.exe"
-#define SrcDir "C:\RitschyBot\mirror_tool"
+; Projekt-Root relativ zur .iss (liegt in installer\) — portabel, kein absoluter Build-Pfad.
+#define SrcDir SourcePath + ".."
 
 [Setup]
 ; Eindeutige App-ID (fest - NICHT aendern, sonst erkennt ein Update die alte Installation nicht).
