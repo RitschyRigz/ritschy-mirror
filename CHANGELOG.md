@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.2 — status icon, single-instance, About, update check
+
+- **Tray icon now shows status** — green when the mirror is running, red when it's stopped.
+- **Single-instance guard** — launching a second copy (or a stray double autostart) no longer
+  creates a second tray icon; it just brings the running instance's settings to the front.
+- **Version in the settings title bar** (`… — Einstellungen vX.Y.Z`).
+- **About section** at the bottom of Settings — version, copyright, MIT license, GitHub link.
+- **Update check** — the app checks GitHub for a newer release on start (best-effort) and shows a
+  clickable tray notification; you can also check on demand from the About section. (Check only —
+  it never downloads or installs anything by itself.)
+
 ## v1.0.1 — stable monitor selection (replug-proof)
 
 Monitor selection now survives unplugging/replugging and display-reordering — important for

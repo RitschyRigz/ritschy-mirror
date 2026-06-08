@@ -14,7 +14,7 @@
     <AssemblyName>RitschyMirror</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Product>RitschyMirror</Product>
     <Company>RitschyRigz</Company>
     <Description>Screen Mirror Tool for capture cards (HDR-to-SDR tonemapping)</Description>
@@ -33,9 +33,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Icon fuer Tray + Fenster (LogicalName fest, damit AppIcon.Load es findet). -->
+    <!-- Icons fuer Tray + Fenster (LogicalName fest, damit AppIcon.Load sie findet).
+         app.ico = Basis (Fenster), app_on/off = Tray-Status gruen/rot. -->
     <EmbeddedResource Include="assets\app.ico">
       <LogicalName>app.ico</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="assets\app_on.ico">
+      <LogicalName>app_on.ico</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="assets\app_off.ico">
+      <LogicalName>app_off.ico</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

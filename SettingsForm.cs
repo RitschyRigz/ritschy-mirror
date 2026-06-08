@@ -29,13 +29,15 @@ public sealed class SettingsForm : Form
     private int _y = 12;
     private ComboBox _srcCombo = null!, _dstCombo = null!;
     private List<DisplayInfo> _displays = new();
+    private LinkLabel? _updateLink;
+    private string? _updateUrl;
 
     public SettingsForm(MirrorEngine engine, string appSettingsPath, AppSettings app)
     {
         _engine = engine; _appSettingsPath = appSettingsPath; _app = app;
         _cfg = MirrorConfig.Load(engine.ConfigPath);
 
-        Text = "RitschyMirror — Einstellungen";
+        Text = $"RitschyMirror — Einstellungen  v{AppInfo.Version}";
         Icon = AppIcon.Load(small: false);
         ClientSize = new Size(620, 780);
         StartPosition = FormStartPosition.CenterScreen;
@@ -51,6 +53,7 @@ public sealed class SettingsForm : Form
         BuildImage();
         BuildCrop();
         BuildConnection();
+        BuildAbout();
         _loading = false;
 
         var start = new Button { Text = "Start / Stop", Location = new Point(12, 9), Width = 120, Height = 30 };
@@ -224,6 +227,46 @@ public sealed class SettingsForm : Form
         _panel.Controls.Add(al);
         _y += 28;
         Note("Agent-/Bind-/Port-Änderungen wirken nach App-Neustart.");
+    }
+
+    // ── Über / Update ─────────────────────────────────────────────────────
+    private void BuildAbout()
+    {
+        Header("Über");
+        Note($"{AppInfo.Name}  v{AppInfo.Version}");
+        Note(AppInfo.Copyright);
+
+        var repo = new LinkLabel { Text = AppInfo.RepoUrl.Replace("https://", ""), Location = new Point(LX, _y), AutoSize = true };
+        repo.LinkClicked += (_, _) => OpenUrl(AppInfo.RepoUrl);
+        _panel.Controls.Add(repo);
+        _y += 26;
+
+        _updateLink = new LinkLabel { Text = "Auf Updates prüfen", Location = new Point(LX, _y), AutoSize = true };
+        _updateLink.LinkClicked += async (_, _) => await DoUpdateCheck();
+        _panel.Controls.Add(_updateLink);
+        _y += ROW;
+    }
+
+    private async Task DoUpdateCheck()
+    {
+        if (_updateUrl != null) { OpenUrl(_updateUrl); return; }   // Update schon gefunden → Release öffnen
+        _updateLink!.Enabled = false;
+        _updateLink.Text = "prüfe…";
+        var r = await UpdateCheck.CheckAsync();
+        _updateLink.Enabled = true;
+        if (r is null) { _updateLink.Text = "Prüfung fehlgeschlagen — erneut versuchen"; return; }
+        if (r.UpdateAvailable)
+        {
+            _updateUrl = r.Url;
+            _updateLink.Text = $"⬇ Update {r.LatestVersion} verfügbar — herunterladen";
+        }
+        else { _updateLink.Text = $"Aktuell ✓ (v{AppInfo.Version} ist die neueste)"; }
+    }
+
+    private static void OpenUrl(string url)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { }
     }
 
     // ── Displays ──────────────────────────────────────────────────────────

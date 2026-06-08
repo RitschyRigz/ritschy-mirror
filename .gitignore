@@ -11,8 +11,8 @@ installer/out/
 mirror.log
 app_settings.json
 
-# Local dev captures / generated previews
+# Local dev captures / generated previews (the .ico files ARE tracked)
 smoketest*.png
-assets/icon_preview.png
+assets/*.png
 
 # Documentation images are tracked (docs/icon.png, docs/screenshot-*.png)

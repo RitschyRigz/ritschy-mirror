@@ -11,7 +11,7 @@
 ; ============================================================================
 
 #define MyAppName "RitschyMirror"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "RitschyRigz"
 #define MyAppURL "https://github.com/RitschyRigz/ritschy-mirror"
 #define MyAppExeName "RitschyMirror.exe"
@@ -77,7 +77,13 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Scree
 Name: "{group}\{#MyAppName} Einstellungen"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--settings"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
+
+[Registry]
+; Autostart über DENSELBEN HKCU\Run-Eintrag, den auch der Settings-Haken verwaltet —
+; so gibt es nur EINEN Mechanismus (kein Doppel-Autostart) und der Haken zeigt die Wahrheit.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
+  ValueName: "{#MyAppName}"; ValueData: """{app}\{#MyAppExeName}"""; Tasks: autostart; \
+  Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
