@@ -10,8 +10,18 @@
 - Tray icon shows status (green = mirroring, red = stopped); version in the settings title bar;
   About section (version / copyright / MIT / GitHub link); GitHub update check (notify only).
 
+## Done in v1.1.0 ✓
+
+- **OBS browser dock** — the HTTP agent serves a small control page (status, start/stop, monitor
+  pick, live crop & image sliders) at `/` and `/dock` that you can add as an **OBS custom browser
+  dock** or open in any browser. Same-origin → no CORS, no extra hosting. Reaches everyone who runs
+  OBS, no separate app needed.
+
 ## Later / nice-to-have
 
+- **Stream Deck integration** — the HTTP API already lets you bind buttons to `start` / `stop` /
+  `config` (on-the-fly crops!) today via a generic web-request plugin; a dedicated Stream Deck
+  plugin with status feedback + dial controls (live crop / saturation) would be the premium step.
 - **Code signing** — sign the installer + exe (Authenticode) to remove the Windows SmartScreen
   "Windows protected your PC" warning on first run.
 - **DisplayFusion profile hook** — optionally load a monitor profile when the mirror starts, so

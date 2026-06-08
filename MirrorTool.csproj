@@ -14,7 +14,7 @@
     <AssemblyName>RitschyMirror</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
-    <Version>1.0.2</Version>
+    <Version>1.1.0</Version>
     <Product>RitschyMirror</Product>
     <Company>RitschyRigz</Company>
     <Description>Screen Mirror Tool for capture cards (HDR-to-SDR tonemapping)</Description>
@@ -43,6 +43,10 @@
     </EmbeddedResource>
     <EmbeddedResource Include="assets\app_off.ico">
       <LogicalName>app_off.ico</LogicalName>
+    </EmbeddedResource>
+    <!-- OBS-/Browser-Steuer-Dock, vom HTTP-Agent unter / und /dock ausgeliefert. -->
+    <EmbeddedResource Include="web\dock.html">
+      <LogicalName>dock.html</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

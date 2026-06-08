@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -95,6 +96,11 @@ public sealed class ControlAgent
 
         switch (path)
         {
+            case "/":
+            case "/dock":
+                WriteHtml(ctx, DockHtml());
+                break;
+
             case "/health":
                 WriteJson(ctx, 200, new JsonObject { ["ok"] = true, ["running"] = _engine.IsRunning });
                 break;
@@ -173,6 +179,30 @@ public sealed class ControlAgent
     {
         using var r = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding ?? Encoding.UTF8);
         return r.ReadToEnd();
+    }
+
+    // Eingebettetes OBS-Dock (web/dock.html) — gleiche Origin wie die JSON-Routen ⇒ kein CORS.
+    private static string? _dock;
+    private static string DockHtml()
+    {
+        if (_dock != null) return _dock;
+        try
+        {
+            using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("dock.html");
+            if (s != null) { using var r = new StreamReader(s); _dock = r.ReadToEnd(); }
+        }
+        catch { }
+        return _dock ??= "<!doctype html><meta charset=utf-8><h1>RitschyMirror</h1><p>dock.html fehlt.</p>";
+    }
+
+    private static void WriteHtml(HttpListenerContext ctx, string html)
+    {
+        var bytes = Encoding.UTF8.GetBytes(html);
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "text/html; charset=utf-8";
+        ctx.Response.ContentLength64 = bytes.Length;
+        ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+        ctx.Response.OutputStream.Close();
     }
 
     private static void WriteJson(HttpListenerContext ctx, int status, JsonNode node)

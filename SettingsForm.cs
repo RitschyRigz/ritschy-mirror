@@ -29,8 +29,6 @@ public sealed class SettingsForm : Form
     private int _y = 12;
     private ComboBox _srcCombo = null!, _dstCombo = null!;
     private List<DisplayInfo> _displays = new();
-    private LinkLabel? _updateLink;
-    private string? _updateUrl;
 
     public SettingsForm(MirrorEngine engine, string appSettingsPath, AppSettings app)
     {
@@ -42,6 +40,10 @@ public sealed class SettingsForm : Form
         ClientSize = new Size(620, 780);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(520, 420);
+        // Auf kleinen/kurzen Bildschirmen nie höher als der Arbeitsbereich — sonst rutscht die
+        // untere Button-Leiste (Schließen / Auf Updates prüfen) aus dem sichtbaren Fenster.
+        var wa = Screen.PrimaryScreen?.WorkingArea;
+        if (wa is { } a && Height > a.Height - 16) Height = a.Height - 16;
 
         _panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(8) };
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = 48, BackColor = SystemColors.ControlLight };
@@ -62,7 +64,9 @@ public sealed class SettingsForm : Form
         restart.Click += (_, _) => { _engine.Stop(); StartWithCheck(); };
         var close = new Button { Text = "Schließen", Location = new Point(308, 9), Width = 110, Height = 30 };
         close.Click += (_, _) => Close();
-        bottom.Controls.AddRange(new Control[] { start, restart, close });
+        var update = new Button { Text = "↻ Auf Updates prüfen", Location = new Point(426, 9), Width = 172, Height = 30 };
+        update.Click += (_, _) => CheckForUpdates(update);
+        bottom.Controls.AddRange(new Control[] { start, restart, close, update });
     }
 
     /// <summary>Start mit Vorab-Check — bei fehlendem Quell-/Ziel-Monitor klare Meldung statt
@@ -240,27 +244,34 @@ public sealed class SettingsForm : Form
         repo.LinkClicked += (_, _) => OpenUrl(AppInfo.RepoUrl);
         _panel.Controls.Add(repo);
         _y += 26;
-
-        _updateLink = new LinkLabel { Text = "Auf Updates prüfen", Location = new Point(LX, _y), AutoSize = true };
-        _updateLink.LinkClicked += async (_, _) => await DoUpdateCheck();
-        _panel.Controls.Add(_updateLink);
-        _y += ROW;
+        Note("Updates prüfst du unten über „↻ Auf Updates prüfen\".");
     }
 
-    private async Task DoUpdateCheck()
+    /// <summary>Großer Button unten: GitHub auf eine neuere Version prüfen und anbieten,
+    /// die Download-Seite zu öffnen.</summary>
+    private async void CheckForUpdates(Button btn)
     {
-        if (_updateUrl != null) { OpenUrl(_updateUrl); return; }   // Update schon gefunden → Release öffnen
-        _updateLink!.Enabled = false;
-        _updateLink.Text = "prüfe…";
+        var old = btn.Text;
+        btn.Enabled = false; btn.Text = "prüfe…";
         var r = await UpdateCheck.CheckAsync();
-        _updateLink.Enabled = true;
-        if (r is null) { _updateLink.Text = "Prüfung fehlgeschlagen — erneut versuchen"; return; }
-        if (r.UpdateAvailable)
+        btn.Enabled = true; btn.Text = old;
+        if (r is null)
         {
-            _updateUrl = r.Url;
-            _updateLink.Text = $"⬇ Update {r.LatestVersion} verfügbar — herunterladen";
+            MessageBox.Show(this, "Update-Prüfung fehlgeschlagen (offline?).", "RitschyMirror",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
-        else { _updateLink.Text = $"Aktuell ✓ (v{AppInfo.Version} ist die neueste)"; }
+        else if (r.UpdateAvailable)
+        {
+            if (MessageBox.Show(this,
+                    $"Update {r.LatestVersion} ist verfügbar (du hast v{AppInfo.Version}).\n\nJetzt zur Download-Seite?",
+                    "RitschyMirror — Update", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                OpenUrl(r.Url);
+        }
+        else
+        {
+            MessageBox.Show(this, $"Du hast die neueste Version (v{AppInfo.Version}).", "RitschyMirror",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 
     private static void OpenUrl(string url)

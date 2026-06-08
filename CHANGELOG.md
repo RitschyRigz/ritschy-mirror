@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.1.0 — OBS browser dock (remote control for everyone)
+
+- **Built-in OBS / browser control dock.** The app's HTTP agent now serves a small control page at
+  `http://<host>:8788/` (and `/dock`). Add it to OBS as a **Custom Browser Dock** (or open it in any
+  browser) to control the mirror remotely — no extra app needed:
+  - status light (green = mirroring, red = stopped) + one-click **Start / Stop**
+  - source / target monitor pickers (identity-stable, like the app)
+  - layout & output mode
+  - **live image sliders** (saturation / contrast / gamma / exposure / paper-white)
+  - **live crop sliders** (on-the-fly crop region)
+- Same-origin (served by the agent itself) → no CORS, no extra hosting. Works single-PC
+  (`localhost:8788`) or two-PC (`<mirror-pc-ip>:8788`).
+
 ## v1.0.2 — status icon, single-instance, About, update check
 
 - **Tray icon now shows status** — green when the mirror is running, red when it's stopped.

@@ -68,8 +68,11 @@ sends the result to the display your capture card is plugged into.
 - 🪟 **Lives in the system tray** — start/stop mirroring without a console window; nothing to
   babysit. Optional **auto-start at login**.
 - 🎚️ **Live config** — most settings (image, layout, crop) apply **instantly** while mirroring.
-- 🔌 **Optional HTTP control agent** — drive it remotely over your LAN (start/stop, change
-  settings, read displays). Handy for stream-deck / dashboard integration.
+- 🔌 **OBS / browser control dock** — the app serves a small control page you can add to OBS as a
+  **Custom Browser Dock** (or open in any browser): status light, start/stop, monitor pick, and
+  **live image + crop sliders**. Control the mirror without alt-tabbing. See below.
+- 🎛️ **HTTP API** — `start` / `stop` / `config` / `displays` over LAN, so Stream Deck (via a
+  web-request plugin) and custom dashboards can drive it too.
 
 ---
 
@@ -99,6 +102,26 @@ removes itself completely, including its config.
    (`fullscreen_block` if you want the mouse locked out of the capture display).
 4. Hit **Start** in the tray menu (or in the settings window).
 5. Tune the image live with the **Tonemap / sliders** if your source is HDR.
+
+---
+
+## Remote control — OBS browser dock
+
+The mirror runs on the PC whose monitor you're capturing; the **control dock** lets you start/stop
+and tweak it from anywhere — most usefully right inside OBS on your streaming PC.
+
+1. In OBS: **Docks → Custom Browser Docks…**
+2. Dock Name: `RitschyMirror`, URL:
+   - same PC as OBS → `http://localhost:8788/`
+   - mirror on another PC (two-PC setup) → `http://<mirror-pc-ip>:8788/`
+3. **Apply** → the dock appears; drag it where you like.
+
+> For the dock to be reachable from another PC, the mirror PC must allow the agent on the network
+> (the installer/app uses port `8788`; allow it through the firewall). On a single PC, `localhost`
+> works out of the box.
+
+The dock gives you a status light, one-click Start/Stop, source/target monitor pickers, layout &
+output mode, and **live image + crop sliders** — no extra software, it's served by the app itself.
 
 ---
 
