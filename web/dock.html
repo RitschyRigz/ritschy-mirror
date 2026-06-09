@@ -96,6 +96,7 @@
     <div class="row"><label>Vert.-Offset</label><input type="number" id="content_offset_y" min="-2160" max="2160" step="2" style="flex:0 0 86px"><span class="hint" style="margin:0">px</span></div>
     <label class="chk"><input type="checkbox" id="show_cursor"><span>Mauszeiger anzeigen</span></label>
     <label class="chk"><input type="checkbox" id="vsync"><span>VSync</span></label>
+    <label class="chk"><input type="checkbox" id="keep_awake"><span>Schlafmodus / Monitor-Abschaltung verhindern</span></label>
   </div>
 
   <div class="card">
@@ -142,7 +143,7 @@ SLIDERS.forEach(id => {
 });
 
 // ── Live-Checkboxen + Selects ──
-["tonemap_enabled","show_cursor","vsync"].forEach(id =>
+["tonemap_enabled","show_cursor","vsync","keep_awake"].forEach(id =>
   $(id).addEventListener("change", e => patch({ [id]: e.target.checked })));
 $("operator").addEventListener("change", e => patch({ operator: e.target.value }));
 $("layout_mode").addEventListener("change", e => patch({ layout_mode: e.target.value }));
@@ -214,7 +215,7 @@ function applyStatus(st) {
   if (!booted) {  // Steuerelemente EINMAL aus der Config initialisieren (kein Drag-Clobber)
     booted = true;
     SLIDERS.forEach(id => { if (cfg[id] != null) { $(id).value = cfg[id]; fmt(id, cfg[id]); } });
-    ["tonemap_enabled","show_cursor","vsync"].forEach(id => { if (cfg[id] != null) $(id).checked = !!cfg[id]; });
+    ["tonemap_enabled","show_cursor","vsync","keep_awake"].forEach(id => { if (cfg[id] != null) $(id).checked = !!cfg[id]; });
     ["operator","layout_mode","output_mode"].forEach(id => { if (cfg[id]) $(id).value = cfg[id]; });
     if (cfg.output_bit_depth != null) $("output_bit_depth").value = String(cfg.output_bit_depth);
     if (cfg.window_width != null) $("window_width").value = cfg.window_width;

@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-2ea0c9">
+  <img src="https://img.shields.io/badge/version-1.2.0-2ea0c9">
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20(x64)-2ea0c9">
   <img src="https://img.shields.io/badge/license-MIT-3aa757">
   <img src="https://img.shields.io/badge/.NET-9-512bd4">
@@ -68,6 +68,9 @@ sends the result to the display your capture card is plugged into.
 - 🪟 **Lives in the system tray** — start/stop mirroring without a console window; nothing to
   babysit. Optional **auto-start at login**.
 - 🎚️ **Live config** — most settings (image, layout, crop) apply **instantly** while mirroring.
+- 🛡️ **Keeps your PC awake while mirroring** — holds off display power-off and sleep so the
+  capture-card display can't drop out mid-stream (like a video player). On by default,
+  toggleable in Settings and the dock.
 - 🔌 **OBS / browser control dock** — the app serves a small control page you can add to OBS as a
   **Custom Browser Dock** (or open in any browser): status light, start/stop, monitor pick, and
   **live image + crop sliders**. Control the mirror without alt-tabbing. See below.
@@ -79,7 +82,7 @@ sends the result to the display your capture card is plugged into.
 ## Download & Install
 
 1. Go to the [**Releases**](https://github.com/RitschyRigz/ritschy-mirror/releases) page and
-   download **`RitschyMirror-Setup-1.0.0.exe`**.
+   download **`RitschyMirror-Setup-1.2.0.exe`**.
 2. Run it. It installs **per-user — no admin / UAC prompt** (like the VS Code user installer),
    into `…\AppData\Local\Programs\RitschyMirror`.
 3. Pick your options (desktop icon, auto-start), finish, and the app starts in your tray.

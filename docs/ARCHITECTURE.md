@@ -40,7 +40,13 @@ remote controller all write the same file; the render loop reads it live.
 
 **Live keys** (apply immediately): `tonemap_enabled`, `operator`, `source_peak_nits`,
 `target_paperwhite`, `exposure`, `saturation`, `contrast`, `gamma`, `content_offset_y`,
-`vsync`, `layout_mode`, `crop_x`, `crop_y`, `crop_w`, `crop_h`, `show_cursor`.
+`vsync`, `layout_mode`, `crop_x`, `crop_y`, `crop_w`, `crop_h`, `show_cursor`, `keep_awake`.
+
+`keep_awake` (default `true`) holds off display power-off + system sleep while the mirror is
+running, via `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)`
+on the render thread. It's set once the render loop actually starts (after source/target
+resolve), toggled live on config reload, and cleared on stop — and because the hold is bound to
+the render thread, Windows releases it automatically if that thread ever exits.
 
 **Structural keys** (need a render restart): `output_bit_depth`, `source_display`,
 `target_display`, `output_mode`, `windowed`, `window_width`, `window_height`,

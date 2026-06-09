@@ -203,6 +203,8 @@ public sealed class SettingsForm : Form
         NumRow("Vertikal-Offset (px)", -2160, 2160, _cfg.ContentOffsetY, 2, 0, v => _cfg.ContentOffsetY = (int)v);
         CheckRow("Mauszeiger anzeigen", _cfg.ShowCursor, v => _cfg.ShowCursor = v);
         CheckRow("VSync", _cfg.Vsync, v => _cfg.Vsync = v);
+        CheckRow("Schlafmodus / Monitor-Abschaltung verhindern (während Spiegelung)",
+                 _cfg.KeepAwake, v => _cfg.KeepAwake = v);
     }
 
     private void BuildCrop()

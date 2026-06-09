@@ -15,6 +15,7 @@
   "crop_w": 1.0,
   "crop_h": 1.0,
   "show_cursor": false,
+  "keep_awake": true,
 
   "output_bit_depth": 10,
   "source_display": 0,

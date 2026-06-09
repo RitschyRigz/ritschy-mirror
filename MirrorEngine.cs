@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
@@ -239,6 +240,11 @@ public sealed class MirrorEngine
             Log("Maus-Sperre aktiv (fullscreen_block).");
         }
 
+        // Ab hier wird wirklich gespiegelt → optional Bildschirm/Schlaf blockieren (Auto-Freigabe
+        // beim Stop). Live umschaltbar: keep_awake wird im Hot-Reload unten nachgezogen.
+        bool keepAwakeOn = false;
+        if (cfg.KeepAwake) { KeepAwakeBegin(); keepAwakeOn = true; }
+
         DateTime lastCfgWrite = SafeWriteTime();
         int frame = 0;
 
@@ -262,6 +268,10 @@ public sealed class MirrorEngine
                     cfg.LayoutMode = nc.LayoutMode;
                     cfg.CropX = nc.CropX; cfg.CropY = nc.CropY; cfg.CropW = nc.CropW; cfg.CropH = nc.CropH;
                     cfg.ShowCursor = nc.ShowCursor;
+                    cfg.KeepAwake = nc.KeepAwake;
+                    // Schlafmodus-Sperre live an/aus, ohne Render-Neustart.
+                    if (cfg.KeepAwake && !keepAwakeOn) { KeepAwakeBegin(); keepAwakeOn = true; }
+                    else if (!cfg.KeepAwake && keepAwakeOn) { KeepAwakeEnd(); keepAwakeOn = false; }
                     Log("Config neu geladen (Live-Parameter).");
                 }
             }
@@ -281,6 +291,7 @@ public sealed class MirrorEngine
         }
 
         Log("Render beendet, raeume auf.");
+        if (keepAwakeOn) KeepAwakeEnd();
         window.DisableCursorBlock();
         if (exclusive) renderer.ExitFullscreen(); // VOR Swapchain-Dispose (DXGI-Pflicht)
         capture.Dispose();
@@ -295,6 +306,37 @@ public sealed class MirrorEngine
     private DateTime SafeWriteTime()
     {
         try { return File.GetLastWriteTimeUtc(ConfigPath); } catch { return DateTime.MinValue; }
+    }
+
+    // ── Schlafmodus / Monitor-Abschaltung verhindern, solange gespiegelt wird ──
+    // Wie ein Videoplayer: ES_DISPLAY_REQUIRED haelt den Bildschirm an, ES_SYSTEM_REQUIRED
+    // verhindert das Einschlafen des Rechners. ES_CONTINUOUS macht den Zustand dauerhaft,
+    // bis wir ihn (auf DEMSELBEN Thread) wieder zuruecknehmen. Beendet der Thread, faellt der
+    // Zustand automatisch zurueck — ein gestopptes/abgestuerztes Mirroring blockiert also nie.
+    [Flags]
+    private enum ExecutionState : uint
+    {
+        Continuous = 0x80000000,
+        SystemRequired = 0x00000001,
+        DisplayRequired = 0x00000002,
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern ExecutionState SetThreadExecutionState(ExecutionState esFlags);
+
+    private void KeepAwakeBegin()
+    {
+        var r = SetThreadExecutionState(
+            ExecutionState.Continuous | ExecutionState.SystemRequired | ExecutionState.DisplayRequired);
+        Log(r == 0 ? "WARN: Schlafmodus-Sperre fehlgeschlagen (SetThreadExecutionState)."
+                   : "Schlafmodus + Monitor-Abschaltung gesperrt (Mirroring laeuft).");
+    }
+
+    private void KeepAwakeEnd()
+    {
+        // Nur ES_CONTINUOUS = Anforderungen zuruecknehmen, normales Energieverhalten wieder erlauben.
+        SetThreadExecutionState(ExecutionState.Continuous);
+        Log("Schlafmodus-Sperre aufgehoben.");
     }
 
     // ── Display-Enumeration ohne laufendes Rendern (GUI-Dropdowns + Agent) ──

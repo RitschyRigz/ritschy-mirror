@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.0 — keep the PC awake while mirroring
+
+- **Prevent sleep / monitor power-off while mirroring.** As long as the mirror is running, the
+  PC no longer dims, blanks, or goes to sleep — just like a video player does during playback.
+  No more capture-card display dropping out because Windows turned the screen off mid-stream.
+- **On by default**, and you can turn it off: a *„Schlafmodus / Monitor-Abschaltung verhindern"*
+  checkbox in **Settings** (Bild / Tonemap) and in the **OBS browser dock**. It's a **live**
+  setting — toggling it takes effect immediately, without restarting the mirror.
+- The keep-awake hold is released automatically the moment mirroring stops (or if the render
+  thread ever exits), so it can never leave your PC stuck awake.
+
 ## v1.1.0 — OBS browser dock (remote control for everyone)
 
 - **Built-in OBS / browser control dock.** The app's HTTP agent now serves a small control page at

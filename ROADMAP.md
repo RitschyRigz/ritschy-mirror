@@ -1,5 +1,12 @@
 # Roadmap
 
+## Done in v1.2.0 ✓
+
+- **Keep the PC awake while mirroring** — the mirror now holds off display power-off and system
+  sleep while it's running (`SetThreadExecutionState`, like a video player), so the capture-card
+  display can't drop out because Windows blanked the screen. On by default, live-toggleable from
+  Settings and the OBS dock, and released automatically when mirroring stops.
+
 ## Done in v1.0.2 ✓
 
 - **Single-instance guard** — a second launch (or a stray double autostart) no longer creates a

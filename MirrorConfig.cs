@@ -39,6 +39,9 @@ public sealed class MirrorConfig
     // Maus-Cursor in die Ausgabe komponieren (Desktop Duplication liefert ihn separat).
     [JsonPropertyName("show_cursor")]      public bool ShowCursor { get; set; } = false;
     [JsonPropertyName("vsync")]            public bool Vsync { get; set; } = true;
+    // Schlafmodus + Monitor-Abschaltung verhindern, solange gespiegelt wird (wie ein Videoplayer).
+    // Default an; live umschaltbar (wirkt sofort am laufenden Mirror).
+    [JsonPropertyName("keep_awake")]       public bool KeepAwake { get; set; } = true;
 
     // ── Struktur (Neustart noetig) ───────────────────────────────────────
     [JsonPropertyName("output_bit_depth")] public int OutputBitDepth { get; set; } = 10;
@@ -83,7 +86,7 @@ public sealed class MirrorConfig
     {
         "tonemap_enabled", "operator", "source_peak_nits", "target_paperwhite",
         "exposure", "saturation", "contrast", "gamma", "content_offset_y", "vsync",
-        "layout_mode", "crop_x", "crop_y", "crop_w", "crop_h", "show_cursor",
+        "layout_mode", "crop_x", "crop_y", "crop_w", "crop_h", "show_cursor", "keep_awake",
     };
     public static readonly HashSet<string> StructKeys = new(StringComparer.OrdinalIgnoreCase)
     {
