@@ -23,6 +23,9 @@ public sealed class Win32Window
     private IntPtr _mouseHook = IntPtr.Zero;
     private RECT _blockRect;
     private bool _inReposition;
+    // Eigener Thread NUR für den Maus-Hook (siehe EnableCursorBlock).
+    private Thread? _hookThread;
+    private volatile uint _hookThreadId;
 
     public Win32Window(string title, int x, int y, int width, int height, bool borderless)
     {
@@ -65,20 +68,50 @@ public sealed class Win32Window
     }
 
     /// <summary>
-    /// Cursor aus dem Rechteck (l,t,r,b in Bildschirm-Koordinaten) heraushalten. Installiert
-    /// einen WH_MOUSE_LL-Hook; muss vom Render-Thread aufgerufen werden (der pumpt die Messages).
+    /// Cursor aus dem Rechteck (l,t,r,b in Bildschirm-Koordinaten) heraushalten.
+    ///
+    /// Der WH_MOUSE_LL-Hook läuft auf einem EIGENEN, schlanken Thread (nur GetMessage-Loop) —
+    /// NICHT auf dem Render-Thread. Grund: ein Low-Level-Maus-Hook wird auf dem installierenden
+    /// Thread dispatcht und braucht eine flotte Message-Pump. Liefe er auf dem Render-Thread,
+    /// würde er nur ~1×/Frame bedient (Present(vsync) blockiert dazwischen) → die Maus würde
+    /// systemweit auf Render-Kadenz gedrosselt + ruckeln. Auf dem dedizierten Thread kehrt der
+    /// Callback sofort zurück → Cursor bleibt smooth (volle Polling-Rate), Sperre bleibt.
     /// </summary>
     public void EnableCursorBlock(int l, int t, int r, int b)
     {
         _blockRect = new RECT { Left = l, Top = t, Right = r, Bottom = b };
-        if (_mouseHook != IntPtr.Zero) return;
+        if (_hookThread != null) return;
         _mouseProc = MouseHookProc; // als Feld halten (GC)
-        _mouseHook = SetWindowsHookEx(14 /*WH_MOUSE_LL*/, _mouseProc, GetModuleHandle(null), 0);
+
+        using var ready = new ManualResetEventSlim(false);
+        _hookThread = new Thread(() =>
+        {
+            _hookThreadId = GetCurrentThreadId();
+            _mouseHook = SetWindowsHookEx(14 /*WH_MOUSE_LL*/, _mouseProc!, GetModuleHandle(null), 0);
+            ready.Set();
+            // Schlanke Loop — tut nichts außer den Hook-Callback prompt zu bedienen.
+            while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+            {
+                TranslateMessage(ref msg);
+                DispatchMessage(ref msg);
+            }
+            if (_mouseHook != IntPtr.Zero) { UnhookWindowsHookEx(_mouseHook); _mouseHook = IntPtr.Zero; }
+        }) { IsBackground = true, Name = "MirrorMouseHook" };
+        _hookThread.Start();
+        ready.Wait(2000); // bis Hook installiert ist
     }
 
     public void DisableCursorBlock()
     {
-        if (_mouseHook != IntPtr.Zero) { UnhookWindowsHookEx(_mouseHook); _mouseHook = IntPtr.Zero; }
+        var t = _hookThread;
+        if (t != null)
+        {
+            // WM_QUIT an den Hook-Thread → GetMessage-Loop endet → Unhook dort.
+            if (_hookThreadId != 0) PostThreadMessage(_hookThreadId, 0x0012 /*WM_QUIT*/, IntPtr.Zero, IntPtr.Zero);
+            if (Thread.CurrentThread != t) t.Join(2000);
+            _hookThread = null;
+            _hookThreadId = 0;
+        }
         _mouseProc = null;
     }
 
@@ -188,6 +221,9 @@ public sealed class Win32Window
     [DllImport("user32.dll")] private static extern void PostQuitMessage(int nExitCode);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+    [DllImport("user32.dll")] private static extern bool PostThreadMessage(uint idThread, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern bool TranslateMessage(ref MSG lpMsg);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr DispatchMessage(ref MSG lpMsg);
     [DllImport("user32.dll")] private static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);

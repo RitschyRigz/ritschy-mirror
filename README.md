@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.0-2ea0c9">
+  <img src="https://img.shields.io/badge/version-1.2.1-2ea0c9">
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20(x64)-2ea0c9">
   <img src="https://img.shields.io/badge/license-MIT-3aa757">
   <img src="https://img.shields.io/badge/.NET-9-512bd4">
@@ -62,7 +62,8 @@ sends the result to the display your capture card is plugged into.
   - `windowed` — a normal test window
   - `borderless` — borderless fullscreen on the target display
   - `fullscreen_block` — borderless fullscreen **+ mouse-lock** (the cursor is kept out of the
-    target display; works on any setup, including cross-GPU)
+    target display; works on any setup, including cross-GPU). The mouse-lock runs on its own
+    thread, so the cursor stays smooth at full polling rate (v1.2.1).
   - `exclusive` — true DXGI exclusive fullscreen (best when source & target share one GPU; falls
     back automatically to `fullscreen_block` otherwise)
 - 🪟 **Lives in the system tray** — start/stop mirroring without a console window; nothing to
@@ -82,7 +83,7 @@ sends the result to the display your capture card is plugged into.
 ## Download & Install
 
 1. Go to the [**Releases**](https://github.com/RitschyRigz/ritschy-mirror/releases) page and
-   download **`RitschyMirror-Setup-1.2.0.exe`**.
+   download **`RitschyMirror-Setup-1.2.1.exe`**.
 2. Run it. It installs **per-user — no admin / UAC prompt** (like the VS Code user installer),
    into `…\AppData\Local\Programs\RitschyMirror`.
 3. Pick your options (desktop icon, auto-start), finish, and the app starts in your tray.

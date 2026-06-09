@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.1 — smooth cursor in `fullscreen_block` (mouse-lock)
+
+- **Fixed the laggy/stuttery cursor in `fullscreen_block` mode.** The mouse-lock used a global
+  low-level mouse hook that ran on the render thread — which spends most of its time waiting on
+  vsync, so every mouse movement system-wide was throttled to the render cadence and felt heavy
+  (even though the display stayed at full refresh / G-Sync). The hook now runs on its own
+  dedicated, fast-pumping thread, so the cursor stays smooth at full polling rate while the
+  display is still mirrored. The mouse is still locked out of the target display — just fluffy
+  again.
+- No effect on controller/gamepad input (it never went through the hook). Mouse-driven games
+  (e.g. shooters) no longer inherit the added input latency while the mirror is running.
+
 ## v1.2.0 — keep the PC awake while mirroring
 
 - **Prevent sleep / monitor power-off while mirroring.** As long as the mirror is running, the

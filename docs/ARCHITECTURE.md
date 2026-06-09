@@ -25,7 +25,7 @@ so capture/display geometry is in real pixels and not distorted by Windows scali
 | `Renderer.cs` | Swap chain + layout/crop geometry + shader pipeline |
 | `Capture.cs` | DXGI Desktop Duplication (incl. optional cursor compositing) |
 | `Shaders.cs` | HLSL (tonemap + crop UV + cursor blend) |
-| `Win32Window.cs` | Window + mouse-lock hook (`WH_MOUSE_LL`) |
+| `Win32Window.cs` | Window + mouse-lock hook (`WH_MOUSE_LL`, on its own dedicated thread so the cursor stays smooth — the hook is never serviced on the vsync-bound render thread) |
 | `MonitorNames.cs` | Friendly EDID monitor names (CCD `QueryDisplayConfig`) |
 | `ControlAgent.cs` | HTTP control agent (`HttpListener`) |
 | `MirrorConfig.cs` | Render config (`mirror_config.json`) |

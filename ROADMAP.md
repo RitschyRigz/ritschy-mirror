@@ -1,5 +1,12 @@
 # Roadmap
 
+## Done in v1.2.1 ✓
+
+- **Smooth cursor in `fullscreen_block`** — the mouse-lock's low-level hook moved off the
+  vsync-bound render thread onto its own dedicated, fast-pumping thread. The cursor stays
+  smooth at full polling rate (no more render-cadence throttling) while the mouse is still
+  locked out of the target display.
+
 ## Done in v1.2.0 ✓
 
 - **Keep the PC awake while mirroring** — the mirror now holds off display power-off and system
