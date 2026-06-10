@@ -378,6 +378,7 @@ public sealed class MirrorEngine
         if (exclusive) renderer.ExitFullscreen(); // VOR Swapchain-Dispose (DXGI-Pflicht)
         capture.Dispose();
         renderer.Dispose();
+        window.Destroy();                          // NACH Swapchain-Dispose: HWND nicht mehr referenziert
         context.Dispose();
         device.Dispose();
         foreach (var disp in displays) disp.Output.Dispose();

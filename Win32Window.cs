@@ -68,6 +68,24 @@ public sealed class Win32Window
     }
 
     /// <summary>
+    /// Fenster explizit zerstoeren. Noetig fuer den Reinit ZWISCHEN Render-Sessions: dort
+    /// endet der Render-Thread NICHT (er baut die Kette neu), also wuerde das alte HWND sonst
+    /// als randloses Topmost-Geisterfenster auf dem Ziel-Display stehen bleiben, waehrend das
+    /// neue dahinter aufmacht. Muss auf dem Erzeuger-Thread (= Render-Thread) laufen.
+    /// </summary>
+    public void Destroy()
+    {
+        DisableCursorBlock();
+        var h = Hwnd;
+        Hwnd = IntPtr.Zero;
+        if (h != IntPtr.Zero) DestroyWindow(h); // synchron → WM_DESTROY → PostQuitMessage(0)
+        // Das von WM_DESTROY gepostete WM_QUIT (und Restnachrichten) hier am Thread abraeumen,
+        // sonst beendet es beim naechsten PumpMessages sofort die frische Session.
+        while (PeekMessage(out _, IntPtr.Zero, 0, 0, 1 /*PM_REMOVE*/)) { }
+        Running = false;
+    }
+
+    /// <summary>
     /// Cursor aus dem Rechteck (l,t,r,b in Bildschirm-Koordinaten) heraushalten.
     ///
     /// Der WH_MOUSE_LL-Hook läuft auf einem EIGENEN, schlanken Thread (nur GetMessage-Loop) —
