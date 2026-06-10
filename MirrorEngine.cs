@@ -141,14 +141,82 @@ public sealed class MirrorEngine
     }
 
     // ── Render-Thread ─────────────────────────────────────────────────────
+    /// <summary>Ausgang einer Render-Session: sauber gestoppt, transient verloren (Reinit),
+    /// oder fatal (Konfig-/Auswahl-Fehler — Reinit würde nichts bringen).</summary>
+    private enum SessionResult { Stopped, Lost, Fatal }
+
+    // Eine Session, die so viele Frames sauber gerendert hat, gilt als „lief gesund" → ein
+    // danach folgender Verlust ist transient und setzt das Reinit-Budget zurück (nur enge
+    // Fehlschlag-Ketten zählen Richtung Abbruch-Limit). ~5 s bei 60 fps.
+    private const long HealthyFrameThreshold = 300;
+    private const int MaxConsecutiveReinit = 8;
+
     private void RenderThreadMain()
     {
-        try { RenderLoop(); }
-        catch (Exception ex) { LastError = ex.Message; Log("FATAL (Render): " + ex); }
+        int consecutive = 0;
+        while (!_stop)
+        {
+            SessionResult result;
+            long frames = 0;
+            try
+            {
+                (result, frames) = RunSession();
+            }
+            catch (Exception ex)
+            {
+                // Harter Fehler beim Aufsetzen (z.B. Device/Capture-Erstellung) → wie ein
+                // Verlust behandeln und mit Backoff erneut versuchen, statt den Thread zu killen.
+                LastError = ex.Message;
+                Log("FEHLER (Render-Session): " + ex);
+                result = SessionResult.Lost;
+            }
+
+            if (_stop || result == SessionResult.Stopped || result == SessionResult.Fatal)
+                break;
+
+            // Lief die Session vorher lange genug gesund, war der Verlust transient → Budget zurück.
+            if (frames >= HealthyFrameThreshold) consecutive = 0;
+            consecutive++;
+            if (consecutive > MaxConsecutiveReinit)
+            {
+                LastError = "Spiegelung ließ sich nach mehreren Versuchen nicht wiederherstellen — gestoppt.";
+                Log("ABBRUCH: " + LastError);
+                break;
+            }
+
+            // Exponentielles Backoff (250 ms → max 5 s), unterbrechbar durch Stop().
+            int backoffMs = Math.Min(5000, 250 * (1 << Math.Min(consecutive - 1, 4)));
+            Log($"Spiegelung verloren — Voll-Reinit in {backoffMs} ms (Versuch {consecutive}/{MaxConsecutiveReinit}).");
+            InterruptibleSleep(backoffMs);
+        }
+        Log("Render-Thread beendet.");
     }
 
-    private void RenderLoop()
+    /// <summary>Schlaf, der bei Stop() sofort abbricht (50-ms-Takt) — damit ein Backoff den
+    /// Engine-Stop nicht um Sekunden verzögert.</summary>
+    private void InterruptibleSleep(int ms)
     {
+        for (int slept = 0; slept < ms && !_stop; slept += 50)
+            Thread.Sleep(Math.Min(50, ms - slept));
+    }
+
+    /// <summary>Schneller Versuch, die Duplication nach einem Verlust (ACCESS_LOST) OHNE
+    /// Voll-Reinit neu aufzusetzen — deckt den häufigen transienten Fall ab (Auflösungs-/
+    /// Moduswechsel an der Quelle, Vollbild-App, UAC-Sicherheitsdesktop). false = nicht erholt
+    /// → der Aufrufer bricht die Session ab und der Supervisor baut die ganze Kette neu.</summary>
+    private bool TryRecoverCapture(DuplicationCapture capture, IDXGIOutput6 output)
+    {
+        for (int attempt = 0; attempt < 5 && !_stop; attempt++)
+        {
+            if (capture.Recreate(output)) { Log("Duplication wiederhergestellt."); return true; }
+            InterruptibleSleep(120);
+        }
+        return false;
+    }
+
+    private (SessionResult result, long frames) RunSession()
+    {
+        LastError = "";  // optimistisch: ein geglückter Reinit soll keine Altmeldung stehen lassen
         var cfg = MirrorConfig.Load(ConfigPath);
         Log("RitschyMirror Render-Start.");
 
@@ -180,7 +248,7 @@ public sealed class MirrorEngine
                 Log($"  Display {displays.Count - 1}: {d.DeviceName} ({(friendly.Length > 0 ? friendly : "?")})  {dc.Right - dc.Left}x{dc.Bottom - dc.Top}  HDR={hdr}  [{adName}]");
             }
         }
-        if (displays.Count == 0) { Log("Keine Displays gefunden."); LastError = "Keine Displays gefunden"; factory.Dispose(); return; }
+        if (displays.Count == 0) { Log("Keine Displays gefunden."); LastError = "Keine Displays gefunden"; factory.Dispose(); return (SessionResult.Fatal, 0); }
 
         // Quelle/Ziel über stabile Identität auflösen (Umstecken-fest); fehlt der konfigurierte
         // Monitor → sauberer Abbruch mit Klartext, statt still den falschen zu spiegeln.
@@ -195,7 +263,7 @@ public sealed class MirrorEngine
             foreach (var disp in displays) disp.Output.Dispose();
             foreach (var ad in adapters) ad.Dispose();
             factory.Dispose();
-            return;
+            return (SessionResult.Fatal, 0);
         }
         var src = displays[srcIdx];
         var dst = displays[dstIdx];
@@ -247,6 +315,8 @@ public sealed class MirrorEngine
 
         DateTime lastCfgWrite = SafeWriteTime();
         int frame = 0;
+        long framesRendered = 0;
+        var sessionResult = SessionResult.Stopped;  // sauberer Default: Fenster zu / Stop()
 
         while (window.Running && !_stop)
         {
@@ -279,18 +349,30 @@ public sealed class MirrorEngine
             try { capture.TryAcquire(context); }
             catch (Exception ex)
             {
-                Log("Capture verloren, neu aufsetzen: " + ex.Message);
-                try { capture.Recreate(src.Output); } catch { }
+                // ACCESS_LOST o.ä. → erst schnelle Duplication-Wiederherstellung (transienter Fall).
+                Log("Capture verloren (" + ex.Message + ") → Duplication neu aufsetzen.");
+                if (!TryRecoverCapture(capture, src.Output))
+                {
+                    // Bleibt sie tot (z.B. Device verloren, Cross-Adapter) → KEIN Weiterspinnen,
+                    // sondern Session abbrechen → Supervisor baut die ganze Kette neu.
+                    Log("Duplication-Wiederherstellung fehlgeschlagen → Voll-Reinit der Render-Kette.");
+                    sessionResult = SessionResult.Lost;
+                    break;
+                }
+                continue;  // frische Duplication → nächste Runde sauber neu acquiren
             }
 
             if (capture.Srv != null)
             {
                 renderer.Render(capture, cfg);
                 renderer.Present(cfg.Vsync);
+                framesRendered++;
             }
         }
 
-        Log("Render beendet, raeume auf.");
+        Log(sessionResult == SessionResult.Lost
+            ? "Render-Session verloren, raeume fuer Reinit auf."
+            : "Render beendet, raeume auf.");
         if (keepAwakeOn) KeepAwakeEnd();
         window.DisableCursorBlock();
         if (exclusive) renderer.ExitFullscreen(); // VOR Swapchain-Dispose (DXGI-Pflicht)
@@ -301,6 +383,7 @@ public sealed class MirrorEngine
         foreach (var disp in displays) disp.Output.Dispose();
         foreach (var ad in adapters) ad.Dispose();
         factory.Dispose();
+        return (sessionResult, framesRendered);
     }
 
     private DateTime SafeWriteTime()

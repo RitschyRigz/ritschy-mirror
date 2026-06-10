@@ -16,7 +16,7 @@ namespace RitschyMirror;
 public sealed class DuplicationCapture : IDisposable
 {
     private readonly ID3D11Device _device;
-    private IDXGIOutputDuplication _dup;
+    private IDXGIOutputDuplication? _dup;
     private ID3D11Texture2D? _copyTex;
     private ID3D11ShaderResourceView? _srv;
 
@@ -48,10 +48,14 @@ public sealed class DuplicationCapture : IDisposable
         _dup = output.DuplicateOutput1(_device, 1, new[] { Format.R16G16B16A16_Float });
     }
 
-    /// <summary>True wenn ein neues Frame geholt+kopiert wurde; false bei Timeout.</summary>
+    /// <summary>True wenn ein neues Frame geholt+kopiert wurde; false bei Timeout.
+    /// Ist die Duplication (nach fehlgeschlagenem Recreate) tot, liefert die Methode false,
+    /// statt auf einer Null-Referenz zu werfen — der Render-Loop entscheidet dann über Reinit.</summary>
     public bool TryAcquire(ID3D11DeviceContext ctx, int timeoutMs = 16)
     {
-        Result r = _dup.AcquireNextFrame((uint)timeoutMs, out OutduplFrameInfo frameInfo, out IDXGIResource? resource);
+        var dup = _dup;
+        if (dup is null) return false;
+        Result r = dup.AcquireNextFrame((uint)timeoutMs, out OutduplFrameInfo frameInfo, out IDXGIResource? resource);
         if (r == Vortice.DXGI.ResultCode.WaitTimeout)
             return false;
         r.CheckError();
@@ -66,7 +70,7 @@ public sealed class DuplicationCapture : IDisposable
         finally
         {
             resource?.Dispose();
-            _dup.ReleaseFrame();
+            dup.ReleaseFrame();
         }
         return true;
     }
@@ -93,6 +97,8 @@ public sealed class DuplicationCapture : IDisposable
     // ── Cursor: Position + Shape einlesen ─────────────────────────────────
     private void UpdateCursor(OutduplFrameInfo fi)
     {
+        var dup = _dup;
+        if (dup is null) return;
         try
         {
             if (fi.LastMouseUpdateTime != 0)
@@ -109,7 +115,7 @@ public sealed class DuplicationCapture : IDisposable
             var handle = GCHandle.Alloc(_shapeBuf, GCHandleType.Pinned);
             try
             {
-                _dup.GetFramePointerShape((uint)size, handle.AddrOfPinnedObject(), out uint _, out OutduplPointerShapeInfo info);
+                dup.GetFramePointerShape((uint)size, handle.AddrOfPinnedObject(), out uint _, out OutduplPointerShapeInfo info);
                 BuildCursorTexture(_shapeBuf, info);
             }
             finally { handle.Free(); }
@@ -174,11 +180,25 @@ public sealed class DuplicationCapture : IDisposable
         finally { pin.Free(); }
     }
 
-    /// <summary>Duplication nach AccessLost neu aufsetzen.</summary>
-    public void Recreate(IDXGIOutput6 output)
+    /// <summary>Duplication nach AccessLost neu aufsetzen.
+    /// true = erfolgreich neu aufgesetzt; false = fehlgeschlagen (z.B. Device verloren / weiterhin
+    /// kein Zugriff) — die Capture bleibt dann in einem SAUBEREN toten Zustand (`_dup == null`),
+    /// statt als Halbleiche im Render-Loop eine Null-Ref-Endlosschleife auszulösen. Der Aufrufer
+    /// soll bei false die ganze Render-Kette (Device + Capture) neu bauen.</summary>
+    public bool Recreate(IDXGIOutput6 output)
     {
-        _dup.Dispose();
-        _dup = output.DuplicateOutput1(_device, 1, new[] { Format.R16G16B16A16_Float });
+        try { _dup?.Dispose(); } catch { /* schon hin — egal */ }
+        _dup = null;
+        try
+        {
+            _dup = output.DuplicateOutput1(_device, 1, new[] { Format.R16G16B16A16_Float });
+            return true;
+        }
+        catch
+        {
+            _dup = null;
+            return false;
+        }
     }
 
     public void Dispose()
@@ -187,6 +207,6 @@ public sealed class DuplicationCapture : IDisposable
         _cursorTex?.Dispose();
         _srv?.Dispose();
         _copyTex?.Dispose();
-        _dup.Dispose();
+        _dup?.Dispose();
     }
 }

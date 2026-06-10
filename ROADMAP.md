@@ -1,5 +1,14 @@
 # Roadmap
 
+## Done in v1.2.2 ✓
+
+- **Self-healing capture** — when DXGI Desktop Duplication is lost (`DXGI_ERROR_ACCESS_LOST`:
+  source mode change, fullscreen app, UAC secure desktop, cross-GPU hiccup), the engine first
+  retries the duplication a few times; if that fails it tears down and **rebuilds the entire
+  render chain** (device + capture) under a supervisor loop with exponential back-off and a retry
+  cap. Fixes the frozen-mirror lockup where a failed re-grab left a dead capture spinning and
+  forced a manual restart mid-stream.
+
 ## Done in v1.2.1 ✓
 
 - **Smooth cursor in `fullscreen_block`** — the mouse-lock's low-level hook moved off the

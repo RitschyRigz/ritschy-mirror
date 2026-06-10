@@ -14,6 +14,27 @@ different GPU, the DWM performs the cross-adapter transfer in borderless mode.
 Per-Monitor-V2 DPI awareness is set programmatically (`SetProcessDpiAwarenessContext`),
 so capture/display geometry is in real pixels and not distorted by Windows scaling.
 
+## Resilience — capture-loss recovery
+
+DXGI Desktop Duplication can lose access at runtime (`DXGI_ERROR_ACCESS_LOST`): a source-side
+mode/refresh change, a game going fullscreen-exclusive, the UAC secure desktop, or a cross-GPU
+device hiccup. Recovery is two-tiered so a transient loss never freezes the picture:
+
+1. **Fast path (`MirrorEngine.TryRecoverCapture`)** — re-create just the duplication a few times
+   with a short delay (`DuplicationCapture.Recreate`). Handles the common transient case without
+   tearing the window down. On failure, `Recreate` leaves the capture in a clean *dead* state
+   (`_dup == null`) — so `TryAcquire` returns `false` instead of throwing, which is what used to
+   spin a dead capture into a `NullReferenceException` loop.
+2. **Full reinit (supervisor loop in `RenderThreadMain`)** — if the fast path can't recover (e.g.
+   the device itself was lost), the session is abandoned and the **whole render chain is rebuilt**
+   (DXGI factory → adapter/output enumeration → device → window → renderer → capture) on a fresh
+   `RunSession()`. Reinit uses **exponential back-off** (250 ms → 5 s, interruptible by `Stop()`)
+   and a **retry cap** (`MaxConsecutiveReinit`); a session that ran healthy for a while
+   (`HealthyFrameThreshold` frames) resets the budget, so only tight failure chains count toward
+   the cap. If recovery genuinely fails, the engine stops cleanly with `LastError` set rather than
+   hanging. Config-/selection errors (no displays, configured monitor unplugged) are terminal
+   (`SessionResult.Fatal`) and are *not* retried — they surface their exact message instead.
+
 ## Source files
 
 | File | Purpose |
