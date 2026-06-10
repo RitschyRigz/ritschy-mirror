@@ -6,8 +6,9 @@
   source mode change, fullscreen app, UAC secure desktop, cross-GPU hiccup), the engine first
   retries the duplication a few times; if that fails it tears down and **rebuilds the entire
   render chain** (device + capture) under a supervisor loop with exponential back-off and a retry
-  cap. Fixes the frozen-mirror lockup where a failed re-grab left a dead capture spinning and
-  forced a manual restart mid-stream.
+  cap. Fixes the rare mid-stream **crash** where a failed re-grab left a dangling capture, the
+  next native D3D call hit freed memory (an access violation managed `try/catch` can't intercept),
+  and the whole process fast-failed and vanished.
 
 ## Done in v1.2.1 ✓
 

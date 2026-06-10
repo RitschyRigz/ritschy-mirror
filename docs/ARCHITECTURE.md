@@ -23,8 +23,11 @@ device hiccup. Recovery is two-tiered so a transient loss never freezes the pict
 1. **Fast path (`MirrorEngine.TryRecoverCapture`)** — re-create just the duplication a few times
    with a short delay (`DuplicationCapture.Recreate`). Handles the common transient case without
    tearing the window down. On failure, `Recreate` leaves the capture in a clean *dead* state
-   (`_dup == null`) — so `TryAcquire` returns `false` instead of throwing, which is what used to
-   spin a dead capture into a `NullReferenceException` loop.
+   (`_dup == null`) — so `TryAcquire` returns `false` instead of touching a disposed COM object.
+   The old code's silent `catch {}` left `_dup` dangling; subsequent calls first threw managed
+   `NullReferenceException`s and then hit a **native access violation** in the D3D layer (freed
+   memory) — a corrupted-state exception that managed `try/catch` can't intercept, so the whole
+   process fast-failed and disappeared. That was the rare mid-stream crash this release fixes.
 2. **Full reinit (supervisor loop in `RenderThreadMain`)** — if the fast path can't recover (e.g.
    the device itself was lost), the session is abandoned and the **whole render chain is rebuilt**
    (DXGI factory → adapter/output enumeration → device → window → renderer → capture) on a fresh

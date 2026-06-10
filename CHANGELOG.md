@@ -1,16 +1,17 @@
 # Changelog
 
-## v1.2.2 — self-healing capture (no more frozen mirror)
+## v1.2.2 — self-healing capture (no more crash when the capture drops)
 
-- **The mirror now recovers on its own when the capture is lost.** Certain events on the source
-  PC (a resolution/refresh change, a game switching to fullscreen, a UAC prompt, or a cross-GPU
-  hiccup) make Windows drop the screen-capture session. Previously, if the quick re-grab failed,
-  the mirror could get stuck spinning on a dead capture and freeze — you had to restart it by
-  hand, mid-stream. Now it retries the capture a few times and, if that's not enough, **fully
-  rebuilds the whole render pipeline** automatically (with a short, growing back-off), so the
-  picture comes back on its own.
-- **No more silent hang.** If recovery genuinely can't succeed after several attempts, the mirror
-  stops cleanly with a clear status instead of sitting there frozen — and it never blocks your PC
+- **The mirror now recovers on its own when the screen capture is lost.** Certain events on the
+  source PC (a resolution/refresh change, a game switching to fullscreen, a UAC prompt, or a
+  cross-GPU hiccup) make Windows drop the capture session. This is rare — it doesn't happen every
+  frame, only when one of those events fires. Previously, when it did, a failed re-grab left the
+  app holding a dead capture; the next call into the graphics driver touched freed memory and the
+  **whole app crashed and disappeared** — you had to relaunch it mid-stream. Now it retries the
+  capture a few times and, if that's not enough, **fully rebuilds the whole render pipeline**
+  automatically (with a short, growing back-off), so the picture comes back on its own.
+- **No more crash, no silent hang.** If recovery genuinely can't succeed after several attempts,
+  the mirror stops cleanly with a clear status instead of crashing — and it never blocks your PC
   from sleeping in that state.
 
 ## v1.2.1 — smooth cursor in `fullscreen_block` (mouse-lock)
