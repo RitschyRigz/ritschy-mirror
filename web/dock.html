@@ -54,10 +54,18 @@
   </div>
 
   <div class="card">
-    <h2>Monitore <small>(Wechsel = Neustart)</small></h2>
-    <div class="row"><label>Quelle</label><select id="src"></select></div>
-    <div class="row"><label>Ziel</label><select id="dst"></select>
-      <button class="iconbtn" id="refresh" title="Aktualisieren">↻</button></div>
+    <h2>Quelle / Ziel <small>(Wechsel = Neustart)</small></h2>
+    <div class="row"><label>Modus</label>
+      <select id="capture_mode" data-kind="struct">
+        <option value="monitor">monitor — ganzer Bildschirm</option>
+        <option value="window">window — ein Fenster / Vollbild-App</option>
+      </select></div>
+    <div class="row"><label>Fenster</label><select id="window_pick"></select>
+      <button class="iconbtn" id="refresh_win" title="Fensterliste aktualisieren">↻</button></div>
+    <div class="row"><label>Quell-Mon.</label><select id="src"></select></div>
+    <div class="row"><label>Ziel-Mon.</label><select id="dst"></select>
+      <button class="iconbtn" id="refresh" title="Monitore aktualisieren">↻</button></div>
+    <div class="hint">„window" spiegelt nur das Fenster — beim Raustaben bleibt der Desktop unsichtbar.</div>
   </div>
 
   <div class="card">
@@ -112,7 +120,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-let displays = [], booted = false, busy = false, lastConfig = null;
+let displays = [], windows = [], booted = false, busy = false, lastConfig = null;
 const running = () => $("toggle").dataset.running === "1";
 
 async function api(path, method = "GET", body) {
@@ -166,6 +174,42 @@ async function pickMonitor(which) {
 }
 $("src").addEventListener("change", () => pickMonitor("src"));
 $("dst").addEventListener("change", () => pickMonitor("dst"));
+
+// ── Quellen-Modus + Fenster-Auswahl (Identität exe+title, Neustart wenn aktiv) ──
+$("capture_mode").addEventListener("change", e => patchStruct({ capture_mode: e.target.value }));
+$("refresh_win").addEventListener("click", loadWindows);
+$("window_pick").addEventListener("change", pickWindow);
+
+async function loadWindows() {
+  try {
+    windows = await api("/windows");
+    const sel = $("window_pick"); sel.innerHTML = "";
+    windows.forEach(w => {
+      const o = document.createElement("option");
+      o.textContent = w.title + (w.exe ? "  (" + w.exe + ")" : "");
+      sel.appendChild(o);
+    });
+    syncWindowSelection(lastConfig);
+  } catch (e) { showErr(); }
+}
+
+function syncWindowSelection(cfg) {
+  if (!cfg || !windows.length) return;
+  const exe = (cfg.window_exe || "").toLowerCase(), title = (cfg.window_title || "").toLowerCase();
+  if (!exe && !title) return;
+  let i = windows.findIndex(w => (w.exe || "").toLowerCase() === exe && (w.title || "").toLowerCase() === title);
+  if (i < 0 && exe) i = windows.findIndex(w => (w.exe || "").toLowerCase() === exe);
+  if (i < 0 && title) i = windows.findIndex(w => (w.title || "").toLowerCase() === title);
+  if (i >= 0) $("window_pick").selectedIndex = i;
+}
+
+// Ein Fenster zu wählen heißt Fenster-Modus → capture_mode gleich mitziehen.
+async function pickWindow() {
+  const w = windows[$("window_pick").selectedIndex];
+  if (!w) return;
+  $("capture_mode").value = "window";
+  await patchStruct({ window_exe: w.exe, window_title: w.title, capture_mode: "window" });
+}
 
 $("toggle").addEventListener("click", async () => {
   if (busy) return; busy = true;
@@ -221,12 +265,14 @@ function applyStatus(st) {
     if (cfg.window_width != null) $("window_width").value = cfg.window_width;
     if (cfg.window_height != null) $("window_height").value = cfg.window_height;
     if (cfg.content_offset_y != null) $("content_offset_y").value = cfg.content_offset_y;
+    if (cfg.capture_mode) $("capture_mode").value = cfg.capture_mode;
     syncMonitorSelection(cfg);
+    syncWindowSelection(cfg);
   }
 }
 
 async function poll() { try { applyStatus(await api("/status")); } catch (e) { showErr(); } }
-loadDisplays(); poll(); setInterval(poll, 2000);
+loadDisplays(); loadWindows(); poll(); setInterval(poll, 2000);
 </script>
 </body>
 </html>

@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.3.0 — mirror a single window or fullscreen app (not just the whole screen)
+
+- **New "window" source mode.** Instead of mirroring a whole monitor, you can now mirror **one
+  specific window or fullscreen app** — e.g. just your game, not your whole desktop. Pick it from
+  a dropdown in **Settings**, the **OBS dock**, or the RitschyBot Cockpit. The old whole-monitor
+  mode is unchanged and stays the default.
+- **Safer for streaming.** A window source shows *only that window* — when you alt-tab away, the
+  mirror keeps showing the app, **never your desktop**. No more accidentally flashing something
+  private into the capture card.
+- **Built on Windows.Graphics.Capture** — the same modern API OBS uses for its "Windows 10 (1903+)"
+  window capture, *not* injection. So: no anti-cheat risk, no admin/elevation mismatch, and it's
+  robust across two GPUs (the classic reason OBS' Game Capture goes black on a multi-GPU rig).
+- The chosen window is remembered by **app + title**, so it's re-selected automatically next time
+  even though Windows hands out fresh window handles on each launch — the same replug-proof
+  approach as the monitor selection. If the app isn't running, the mirror refuses to start with a
+  clear message instead of mirroring the wrong thing.
+
 ## v1.2.2 — self-healing capture (no more crash when the capture drops)
 
 - **The mirror now recovers on its own when the screen capture is lost.** Certain events on the

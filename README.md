@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.2.2-2ea0c9">
+  <img src="https://img.shields.io/badge/version-1.3.0-2ea0c9">
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20(x64)-2ea0c9">
   <img src="https://img.shields.io/badge/license-MIT-3aa757">
   <img src="https://img.shields.io/badge/.NET-9-512bd4">
@@ -51,6 +51,10 @@ sends the result to the display your capture card is plugged into.
 
 - 🎯 **Pick source & target monitor** from dropdowns — real monitor names (e.g. *AORUS FO32U2P*),
   HDR-aware, multi-GPU aware (source and target may even hang off **different graphics cards**).
+- 🪟 **Or mirror a single window / fullscreen app** instead of a whole monitor — pick one app
+  (e.g. just your game). Only that window is shown, so **alt-tabbing never flashes your desktop**
+  into the capture card. Built on Windows.Graphics.Capture (the modern OS API, *not* injection →
+  no anti-cheat risk, robust even when capture and game live on different GPUs).
 - 🌈 **HDR → SDR tonemapping** on the GPU (`bt2390`, `reinhard`, `hable`, `aces`) with **live**
   exposure / saturation / contrast / gamma / paper-white controls.
 - 🖼️ **Layout modes** — how the source fills the output:
@@ -83,7 +87,7 @@ sends the result to the display your capture card is plugged into.
 ## Download & Install
 
 1. Go to the [**Releases**](https://github.com/RitschyRigz/ritschy-mirror/releases) page and
-   download **`RitschyMirror-Setup-1.2.2.exe`**.
+   download **`RitschyMirror-Setup-1.3.0.exe`**.
 2. Run it. It installs **per-user — no admin / UAC prompt** (like the VS Code user installer),
    into `…\AppData\Local\Programs\RitschyMirror`.
 3. Pick your options (desktop icon, auto-start), finish, and the app starts in your tray.

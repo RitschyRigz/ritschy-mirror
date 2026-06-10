@@ -14,6 +14,28 @@ different GPU, the DWM performs the cross-adapter transfer in borderless mode.
 Per-Monitor-V2 DPI awareness is set programmatically (`SetProcessDpiAwarenessContext`),
 so capture/display geometry is in real pixels and not distorted by Windows scaling.
 
+## Capture sources
+
+The thing being mirrored sits behind a small seam, `ICaptureSource` (a FP16 SRV + size +
+HDR flag + cursor info + `TryAcquire`/`Recover`/`ApplyLiveConfig`). Everything downstream —
+tonemap, layout, crop, present — is identical regardless of source, so adding a source type
+doesn't touch the renderer or the engine loop. `capture_mode` (structural) selects which:
+
+- **`monitor`** (default) — `DuplicationCapture`: whole-monitor **DXGI Desktop Duplication**, as
+  above. The render device is created on the *source* adapter (Duplication is adapter-bound).
+- **`window`** — `WindowCapture`: a single window / fullscreen app via **Windows.Graphics.Capture
+  (WGC)** — the same OS API behind OBS' "Windows 10 (1903+)" window capture, *not* injection.
+  Frames arrive as `R16G16B16A16_Float` D3D11 textures (free-threaded frame pool, polled with
+  `TryGetNextFrame` from the render thread) → copied into the same shader-readable SRV the
+  Duplication path produces. The render device is created on the *target* adapter; WGC delivers
+  the window content across adapters via the DWM, which is why it's robust on multi-GPU rigs where
+  injection-based capture goes black. The cursor (if enabled) is composited by WGC into the frame
+  (`IsCursorCaptureEnabled`), so the renderer's separate cursor pass is unused in this mode; the
+  yellow capture border is disabled where the API exists (Win11 22000+). The window is selected by
+  **stable identity** (process exe + title, see `WindowEnum`), so it survives the non-stable HWNDs
+  across app launches — and only that window is ever shown, so alt-tabbing never reveals the
+  desktop. HDR is inferred from the monitor the window currently sits on.
+
 ## Resilience — capture-loss recovery
 
 DXGI Desktop Duplication can lose access at runtime (`DXGI_ERROR_ACCESS_LOST`): a source-side
@@ -46,8 +68,11 @@ device hiccup. Recovery is two-tiered so a transient loss never freezes the pict
 | `TrayContext.cs` | NotifyIcon + menu, owns the engine + HTTP agent |
 | `SettingsForm.cs` | Local settings GUI (all parameters) |
 | `MirrorEngine.cs` | Render loop (start/stop), display enumeration, live config reload |
-| `Renderer.cs` | Swap chain + layout/crop geometry + shader pipeline |
-| `Capture.cs` | DXGI Desktop Duplication (incl. optional cursor compositing) |
+| `Renderer.cs` | Swap chain + layout/crop geometry + shader pipeline (consumes `ICaptureSource`) |
+| `ICaptureSource.cs` | Capture-source seam (FP16 SRV + size/HDR/cursor + acquire/recover) |
+| `Capture.cs` | `DuplicationCapture` — DXGI Desktop Duplication (incl. optional cursor compositing) |
+| `WindowCapture.cs` | `WindowCapture` — single window / fullscreen app via Windows.Graphics.Capture |
+| `WindowEnum.cs` | Enumerate capturable windows + resolve a saved window by stable identity (exe+title) |
 | `Shaders.cs` | HLSL (tonemap + crop UV + cursor blend) |
 | `Win32Window.cs` | Window + mouse-lock hook (`WH_MOUSE_LL`, on its own dedicated thread so the cursor stays smooth — the hook is never serviced on the vsync-bound render thread) |
 | `MonitorNames.cs` | Friendly EDID monitor names (CCD `QueryDisplayConfig`) |
@@ -72,9 +97,12 @@ on the render thread. It's set once the render loop actually starts (after sourc
 resolve), toggled live on config reload, and cleared on stop — and because the hold is bound to
 the render thread, Windows releases it automatically if that thread ever exits.
 
-**Structural keys** (need a render restart): `output_bit_depth`, `source_display`,
-`target_display`, `output_mode`, `windowed`, `window_width`, `window_height`,
-`output_width`, `output_height`.
+**Structural keys** (need a render restart): `output_bit_depth`, `capture_mode`, `window_exe`,
+`window_title`, `source_display`, `target_display`, `output_mode`, `windowed`, `window_width`,
+`window_height`, `output_width`, `output_height`.
+
+`capture_mode` = `monitor` (default) or `window`; in window mode the source is the window matched
+by `window_exe` + `window_title` (stable identity) instead of `source_display`.
 
 `crop_*` are in 0..1 of the source and only used when `layout_mode = crop_region`.
 `output_mode` empty falls back to the legacy `windowed` flag for backward compatibility.
@@ -92,6 +120,7 @@ Configured via `app_settings.json` (`agent_bind`, `agent_port`, `agent_enabled`)
 | `GET /config` · `POST /config` | Read config / merge a whitelisted patch |
 | `POST /start` · `/stop` · `/restart` | Control rendering |
 | `GET /displays` | Enumerated displays (index, name, friendly, resolution, hdr, adapter) |
+| `GET /windows` | Capturable windows for the window-source picker (title, exe, pid) |
 
 ### RitschyBot Cockpit integration (optional)
 

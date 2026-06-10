@@ -43,6 +43,16 @@ public sealed class MirrorConfig
     // Default an; live umschaltbar (wirkt sofort am laufenden Mirror).
     [JsonPropertyName("keep_awake")]       public bool KeepAwake { get; set; } = true;
 
+    // ── Quelle: ganzer Monitor ODER ein Fenster (Neustart noetig) ────────
+    // capture_mode: "monitor" (ganzer Bildschirm via Desktop Duplication, Default) |
+    //               "window"  (ein Fenster / eine Vollbild-App via Windows.Graphics.Capture).
+    // Im Fenster-Modus wird NUR das Fenster gespiegelt → beim Raustaben bleibt der Desktop unsichtbar.
+    [JsonPropertyName("capture_mode")]     public string CaptureMode { get; set; } = "monitor";
+    // Fenster-Identität (nur capture_mode="window"): Exe (primär, stabil) + Titel (sekundär, zum
+    // Unterscheiden mehrerer Fenster derselben Exe). Analog zur umsteck-festen Monitor-Identität.
+    [JsonPropertyName("window_exe")]       public string WindowExe { get; set; } = "";
+    [JsonPropertyName("window_title")]     public string WindowTitle { get; set; } = "";
+
     // ── Struktur (Neustart noetig) ───────────────────────────────────────
     [JsonPropertyName("output_bit_depth")] public int OutputBitDepth { get; set; } = 10;
     // Monitor-Auswahl: bevorzugt über stabile Identität (key = monitorDevicePath, label = EDID-Name),
@@ -81,6 +91,10 @@ public sealed class MirrorConfig
         return m;
     }
 
+    /// <summary>Effektiver Quellen-Modus: "window" oder (Default) "monitor".</summary>
+    public string ResolveCaptureMode()
+        => (CaptureMode ?? "").Trim().ToLowerInvariant() == "window" ? "window" : "monitor";
+
     // ── Schluessel-Whitelist (gegen Injection; LIVE wirkt sofort) ─────────
     public static readonly HashSet<string> LiveKeys = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -94,6 +108,7 @@ public sealed class MirrorConfig
         "source_key", "source_label", "target_key", "target_label",
         "output_mode", "windowed",
         "window_width", "window_height", "output_width", "output_height",
+        "capture_mode", "window_exe", "window_title",
     };
     public static IEnumerable<string> AllKeys => LiveKeys.Concat(StructKeys);
 

@@ -2,7 +2,13 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <!-- Windows-SDK-TFM (statt net9.0-windows): schaltet die WinRT-Projektionen frei, u.a.
+         Windows.Graphics.Capture (WGC) für die Fenster-/Vollbild-App-Aufnahme. WinForms bleibt.
+         API-Surface 22621 (damit IsBorderRequired bekannt ist), aber Runtime-Floor 19041 → die App
+         läuft weiter auf Windows 10 (2004+, das WGC-Minimum); neuere APIs werden zur Laufzeit
+         versionsgeguarded (OperatingSystem.IsWindowsVersionAtLeast). -->
+    <TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -14,7 +20,7 @@
     <AssemblyName>RitschyMirror</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
-    <Version>1.2.2</Version>
+    <Version>1.3.0</Version>
     <Product>RitschyMirror</Product>
     <Company>RitschyRigz</Company>
     <Description>Screen Mirror Tool for capture cards (HDR-to-SDR tonemapping)</Description>

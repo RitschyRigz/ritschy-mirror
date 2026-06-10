@@ -18,6 +18,9 @@
   "keep_awake": true,
 
   "output_bit_depth": 10,
+  "capture_mode": "monitor",
+  "window_exe": "",
+  "window_title": "",
   "source_display": 0,
   "target_display": 0,
   "output_mode": "windowed",

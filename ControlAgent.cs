@@ -19,6 +19,7 @@ namespace RitschyMirror;
 ///   POST /config    → Whitelist-Merge (Body = JSON-Patch), dann Status
 ///   POST /start | /stop | /restart → Engine steuern, dann Status
 ///   GET  /displays  → [{index,name,resolution,hdr,adapter}, ...]
+///   GET  /windows   → [{title,exe,pid}, ...]  (aufnehmbare Fenster für den Fenster-Picker)
 /// </summary>
 public sealed class ControlAgent
 {
@@ -147,6 +148,15 @@ public sealed class ControlAgent
                         ["key"] = d.Key,
                         ["resolution"] = d.Resolution, ["hdr"] = d.Hdr, ["adapter"] = d.Adapter,
                     });
+                WriteJson(ctx, 200, arr);
+                break;
+            }
+
+            case "/windows":
+            {
+                var arr = new JsonArray();
+                foreach (var w in WindowEnum.List())
+                    arr.Add(new JsonObject { ["title"] = w.Title, ["exe"] = w.Exe, ["pid"] = w.Pid });
                 WriteJson(ctx, 200, arr);
                 break;
             }

@@ -28,7 +28,11 @@ public sealed class SettingsForm : Form
     private readonly Panel _panel;
     private int _y = 12;
     private ComboBox _srcCombo = null!, _dstCombo = null!;
+    private ComboBox _modeCombo = null!, _winCombo = null!;
     private List<DisplayInfo> _displays = new();
+    private List<WindowInfo> _windows = new();
+
+    private const StringComparison OIC = StringComparison.OrdinalIgnoreCase;
 
     public SettingsForm(MirrorEngine engine, string appSettingsPath, AppSettings app)
     {
@@ -154,7 +158,13 @@ public sealed class SettingsForm : Form
         _displays = MirrorEngine.EnumerateDisplays();
         var names = DisplayNames();
 
-        Lbl("Quell-Monitor");
+        // Quellen-Modus: ganzer Monitor (Desktop Duplication) ODER ein Fenster (Windows.Graphics.Capture).
+        _modeCombo = ComboRow("Quellen-Modus", new[] { "monitor", "window" }, _cfg.ResolveCaptureMode(),
+                              s => _cfg.CaptureMode = s);
+        Note("monitor = ganzer Bildschirm  ·  window = nur EIN Fenster / Vollbild-App");
+        Note("(Fenster-Modus zeigt beim Raustaben NICHT deinen Desktop — sicherer.)");
+
+        Lbl("Quell-Monitor  (Modus „monitor\")");
         _srcCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(CX, _y), Width = 330 };
         _srcCombo.Items.AddRange(names);
         int siSel = FindByIdentity(_cfg.SourceKey, _cfg.SourceLabel, _cfg.SourceDisplay);
@@ -162,6 +172,22 @@ public sealed class SettingsForm : Form
         _srcCombo.SelectedIndexChanged += (_, _) => { if (!_loading) StoreSelection(_srcCombo, src: true); };
         _panel.Controls.Add(_srcCombo);
         _y += ROW;
+
+        // Fenster-Quelle (Modus „window") — identitäts-stabil über Exe + Titel, wie die Monitor-Auswahl.
+        _windows = WindowEnum.List();
+        Lbl("Fenster  (Modus „window\")");
+        _winCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(CX, _y), Width = 330 };
+        _winCombo.Items.AddRange(_windows.Select(w => w.DisplayName).ToArray());
+        int wiSel = FindWindowIndex();
+        if (wiSel >= 0) _winCombo.SelectedIndex = wiSel;
+        _winCombo.SelectedIndexChanged += (_, _) => { if (!_loading) StoreWindow(); };
+        _panel.Controls.Add(_winCombo);
+        var winRefresh = new Button { Text = "↻", Location = new Point(CX + 338, _y - 1), Width = 32, Height = 26 };
+        winRefresh.Click += (_, _) => RefreshWindows();
+        _panel.Controls.Add(winRefresh);
+        _y += ROW;
+        if (wiSel < 0 && HasWindowIdentity())
+            Note($"⚠ Gespeichertes Fenster \"{WindowLabel()}\" aktuell nicht offen (Auswahl bleibt gespeichert).");
 
         Lbl("Ziel-Monitor");
         _dstCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(CX, _y), Width = 330 };
@@ -335,6 +361,53 @@ public sealed class SettingsForm : Form
         int d = FindByIdentity(_cfg.TargetKey, _cfg.TargetLabel, _cfg.TargetDisplay);
         _srcCombo.SelectedIndex = s >= 0 ? s : -1;
         _dstCombo.SelectedIndex = d >= 0 ? d : -1;
+        _loading = false;
+    }
+
+    // ── Fenster-Auswahl (Fenster-Capture-Modus) ───────────────────────────
+    private bool HasWindowIdentity() =>
+        !string.IsNullOrWhiteSpace(_cfg.WindowExe) || !string.IsNullOrWhiteSpace(_cfg.WindowTitle);
+
+    private string WindowLabel() =>
+        string.IsNullOrWhiteSpace(_cfg.WindowExe) ? _cfg.WindowTitle : $"{_cfg.WindowTitle} ({_cfg.WindowExe})";
+
+    /// <summary>Combo-Index für die gespeicherte Fenster-Identität: gleiche Exe + exakter Titel →
+    /// erste gleiche Exe → exakter Titel. -1 = nicht gefunden (Fenster nicht offen).</summary>
+    private int FindWindowIndex()
+    {
+        if (!HasWindowIdentity()) return -1;
+        int exact = _windows.FindIndex(w =>
+            string.Equals(w.Exe, _cfg.WindowExe, OIC) && string.Equals(w.Title, _cfg.WindowTitle, OIC));
+        if (exact >= 0) return exact;
+        int byExe = _windows.FindIndex(w => string.Equals(w.Exe, _cfg.WindowExe, OIC));
+        if (byExe >= 0) return byExe;
+        return _windows.FindIndex(w => string.Equals(w.Title, _cfg.WindowTitle, OIC));
+    }
+
+    /// <summary>Fenster-Auswahl persistieren (Exe + Titel) und den Quellen-Modus auf „window"
+    /// mitziehen — ein Fenster zu wählen heißt: Fenster spiegeln.</summary>
+    private void StoreWindow()
+    {
+        int i = _winCombo.SelectedIndex;
+        if (i < 0 || i >= _windows.Count) return;
+        var w = _windows[i];
+        _cfg.WindowExe = w.Exe;
+        _cfg.WindowTitle = w.Title;
+        _cfg.CaptureMode = "window";
+        _loading = true;
+        _modeCombo.SelectedItem = "window";
+        _loading = false;
+        SaveCfg();
+    }
+
+    private void RefreshWindows()
+    {
+        _windows = WindowEnum.List();
+        _loading = true;
+        _winCombo.Items.Clear();
+        _winCombo.Items.AddRange(_windows.Select(w => w.DisplayName).ToArray());
+        int i = FindWindowIndex();
+        _winCombo.SelectedIndex = i >= 0 ? i : -1;
         _loading = false;
     }
 

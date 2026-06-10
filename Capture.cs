@@ -13,9 +13,10 @@ namespace RitschyMirror;
 /// Position + Shape). Wird hier optional eingelesen und als BGRA-Textur bereitgestellt,
 /// damit der Renderer ihn auf Wunsch einkomponiert (output.show_cursor).
 /// </summary>
-public sealed class DuplicationCapture : IDisposable
+public sealed class DuplicationCapture : ICaptureSource
 {
     private readonly ID3D11Device _device;
+    private readonly IDXGIOutput6 _output;   // für Recover() (Duplication ist output-gebunden)
     private IDXGIOutputDuplication? _dup;
     private ID3D11Texture2D? _copyTex;
     private ID3D11ShaderResourceView? _srv;
@@ -40,6 +41,7 @@ public sealed class DuplicationCapture : IDisposable
     public DuplicationCapture(ID3D11Device device, IDXGIOutput6 output)
     {
         _device = device;
+        _output = output;
         var desc = output.Description1;
         Width = desc.DesktopCoordinates.Right - desc.DesktopCoordinates.Left;
         Height = desc.DesktopCoordinates.Bottom - desc.DesktopCoordinates.Top;
@@ -180,18 +182,18 @@ public sealed class DuplicationCapture : IDisposable
         finally { pin.Free(); }
     }
 
-    /// <summary>Duplication nach AccessLost neu aufsetzen.
+    /// <summary>Duplication nach AccessLost neu aufsetzen (am gespeicherten Output).
     /// true = erfolgreich neu aufgesetzt; false = fehlgeschlagen (z.B. Device verloren / weiterhin
     /// kein Zugriff) — die Capture bleibt dann in einem SAUBEREN toten Zustand (`_dup == null`),
     /// statt als Halbleiche im Render-Loop eine Null-Ref-Endlosschleife auszulösen. Der Aufrufer
     /// soll bei false die ganze Render-Kette (Device + Capture) neu bauen.</summary>
-    public bool Recreate(IDXGIOutput6 output)
+    public bool Recover()
     {
         try { _dup?.Dispose(); } catch { /* schon hin — egal */ }
         _dup = null;
         try
         {
-            _dup = output.DuplicateOutput1(_device, 1, new[] { Format.R16G16B16A16_Float });
+            _dup = _output.DuplicateOutput1(_device, 1, new[] { Format.R16G16B16A16_Float });
             return true;
         }
         catch
@@ -200,6 +202,10 @@ public sealed class DuplicationCapture : IDisposable
             return false;
         }
     }
+
+    /// <summary>No-op: bei Monitor-Capture komponiert der Renderer den Cursor (separat von DXGI),
+    /// es gibt keinen quellseitigen Live-Zustand nachzuziehen.</summary>
+    public void ApplyLiveConfig(MirrorConfig cfg) { }
 
     public void Dispose()
     {

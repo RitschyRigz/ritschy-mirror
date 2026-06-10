@@ -104,7 +104,7 @@ public sealed class Renderer : IDisposable
     /// <see cref="MirrorConfig.LayoutMode"/> — siehe <see cref="ComputeLayout"/>.
     /// Optional wird der Maus-Cursor (separat von DXGI geliefert) einkomponiert.
     /// </summary>
-    public void Render(DuplicationCapture cap, MirrorConfig cfg)
+    public void Render(ICaptureSource cap, MirrorConfig cfg)
     {
         int srcW = cap.Width, srcH = cap.Height;
         var (vp, cropMinX, cropMinY, cropMaxX, cropMaxY) = ComputeLayout(srcW, srcH, cfg);

@@ -200,15 +200,15 @@ public sealed class MirrorEngine
             Thread.Sleep(Math.Min(50, ms - slept));
     }
 
-    /// <summary>Schneller Versuch, die Duplication nach einem Verlust (ACCESS_LOST) OHNE
-    /// Voll-Reinit neu aufzusetzen — deckt den häufigen transienten Fall ab (Auflösungs-/
+    /// <summary>Schneller Versuch, die Quelle nach einem Verlust (ACCESS_LOST / Frame-Pool-Fehler)
+    /// OHNE Voll-Reinit wieder aufzusetzen — deckt den häufigen transienten Fall ab (Auflösungs-/
     /// Moduswechsel an der Quelle, Vollbild-App, UAC-Sicherheitsdesktop). false = nicht erholt
     /// → der Aufrufer bricht die Session ab und der Supervisor baut die ganze Kette neu.</summary>
-    private bool TryRecoverCapture(DuplicationCapture capture, IDXGIOutput6 output)
+    private bool TryRecoverCapture(ICaptureSource capture)
     {
         for (int attempt = 0; attempt < 5 && !_stop; attempt++)
         {
-            if (capture.Recreate(output)) { Log("Duplication wiederhergestellt."); return true; }
+            if (capture.Recover()) { Log("Bildquelle wiederhergestellt."); return true; }
             InterruptibleSleep(120);
         }
         return false;
@@ -250,32 +250,79 @@ public sealed class MirrorEngine
         }
         if (displays.Count == 0) { Log("Keine Displays gefunden."); LastError = "Keine Displays gefunden"; factory.Dispose(); return (SessionResult.Fatal, 0); }
 
-        // Quelle/Ziel über stabile Identität auflösen (Umstecken-fest); fehlt der konfigurierte
-        // Monitor → sauberer Abbruch mit Klartext, statt still den falschen zu spiegeln.
+        // Ziel-Monitor immer über stabile Identität auflösen (beide Quellen-Modi spiegeln dorthin);
+        // fehlt der konfigurierte Monitor → sauberer Abbruch mit Klartext.
         var ids = displays.Select(x => (Key: x.Key, Label: x.Friendly)).ToList();
-        var (srcIdx, srcErr) = ResolveSelection(cfg.SourceKey, cfg.SourceLabel, cfg.SourceDisplay, ids, "Quell");
-        var (dstIdx, dstErr) = ResolveSelection(cfg.TargetKey, cfg.TargetLabel, cfg.TargetDisplay, ids, "Ziel");
-        string selErr = srcErr.Length != 0 ? srcErr : dstErr;
-        if (selErr.Length != 0)
+        void CleanupEnum()
         {
-            Log("Start abgebrochen: " + selErr);
-            LastError = selErr;
             foreach (var disp in displays) disp.Output.Dispose();
             foreach (var ad in adapters) ad.Dispose();
             factory.Dispose();
+        }
+        var (dstIdx, dstErr) = ResolveSelection(cfg.TargetKey, cfg.TargetLabel, cfg.TargetDisplay, ids, "Ziel");
+        if (dstErr.Length != 0)
+        {
+            Log("Start abgebrochen: " + dstErr);
+            LastError = dstErr;
+            CleanupEnum();
             return (SessionResult.Fatal, 0);
         }
-        var src = displays[srcIdx];
         var dst = displays[dstIdx];
         string mode = cfg.ResolveOutputMode();
-        Log($"Quelle = Display {srcIdx} ({src.Name}), Ziel = Display {dstIdx} ({dst.Name}), output_mode={mode}, layout={cfg.LayoutMode}");
+        string captureMode = cfg.ResolveCaptureMode();
 
-        // Device auf dem QUELL-Adapter (Desktop Duplication ist adapter-gebunden).
         var featureLevels = new[] { FeatureLevel.Level_11_1, FeatureLevel.Level_11_0 };
-        D3D11CreateDevice(src.Adapter, DriverType.Unknown, DeviceCreationFlags.BgraSupport, featureLevels,
-            out ID3D11Device device, out ID3D11DeviceContext context).CheckError();
+        ID3D11Device device;
+        ID3D11DeviceContext context;
+        ICaptureSource capture;
 
-        // Fenstergeometrie nach output_mode
+        if (captureMode == "window")
+        {
+            // Fenster-Quelle (WGC): gespeicherte Identität → aktuelles HWND. Fehlt das Fenster
+            // (App nicht offen) → sauberer Abbruch mit Klartext, statt blind etwas zu spiegeln.
+            var (hwnd, winErr) = WindowEnum.Resolve(cfg.WindowExe, cfg.WindowTitle);
+            if (winErr.Length != 0 || hwnd == IntPtr.Zero)
+            {
+                string e = winErr.Length != 0 ? winErr : "Kein Fenster ausgewählt";
+                Log("Start abgebrochen: " + e);
+                LastError = e;
+                CleanupEnum();
+                return (SessionResult.Fatal, 0);
+            }
+            // Device auf dem ZIEL-Adapter (Present same-adapter); WGC liefert das Fensterbild
+            // adapter-übergreifend über den DWM — genau das macht es Cross-GPU-robust.
+            D3D11CreateDevice(dst.Adapter, DriverType.Unknown, DeviceCreationFlags.BgraSupport, featureLevels,
+                out device, out context).CheckError();
+            // HDR-Erkennung: hängt das Fenster (Mittelpunkt) auf einem HDR-Monitor? → Tonemap rollt Highlights.
+            bool winHdr = false;
+            if (GetWindowRect(hwnd, out RECT wr))
+            {
+                int cx = (wr.Left + wr.Right) / 2, cy = (wr.Top + wr.Bottom) / 2;
+                foreach (var d in displays)
+                    if (cx >= d.L && cx < d.R && cy >= d.T && cy < d.B) { winHdr = d.Hdr; break; }
+            }
+            Log($"Quelle = Fenster '{cfg.WindowTitle}' ({cfg.WindowExe}), Ziel = Display {dstIdx} ({dst.Name}), output_mode={mode}, layout={cfg.LayoutMode}, HDR={winHdr}");
+            capture = new WindowCapture(device, hwnd, winHdr, cfg.ShowCursor);
+        }
+        else
+        {
+            // Monitor-Quelle (Desktop Duplication, duplication-gebunden) → Device auf QUELL-Adapter.
+            var (srcIdx, srcErr) = ResolveSelection(cfg.SourceKey, cfg.SourceLabel, cfg.SourceDisplay, ids, "Quell");
+            if (srcErr.Length != 0)
+            {
+                Log("Start abgebrochen: " + srcErr);
+                LastError = srcErr;
+                CleanupEnum();
+                return (SessionResult.Fatal, 0);
+            }
+            var src = displays[srcIdx];
+            D3D11CreateDevice(src.Adapter, DriverType.Unknown, DeviceCreationFlags.BgraSupport, featureLevels,
+                out device, out context).CheckError();
+            Log($"Quelle = Display {srcIdx} ({src.Name}), Ziel = Display {dstIdx} ({dst.Name}), output_mode={mode}, layout={cfg.LayoutMode}");
+            capture = new DuplicationCapture(device, src.Output);
+        }
+
+        // Fenstergeometrie nach output_mode (immer vom ZIEL-Display)
         bool windowed = mode == "windowed";
         int x, y, outW, outH; bool borderless;
         if (windowed)
@@ -291,8 +338,6 @@ public sealed class MirrorEngine
         var window = new Win32Window("RitschyMirror", x, y, outW, outH, borderless);
         Log("Schritt: Renderer/Swapchain...");
         var renderer = new Renderer(factory, device, context, window.Hwnd, outW, outH, cfg.OutputBitDepth);
-        Log("Schritt: Capture/Duplication...");
-        var capture = new DuplicationCapture(device, src.Output);
         Log($"Capture {capture.Width}x{capture.Height} HDR={capture.InputIsHdr} → Ausgabe {outW}x{outH} ({(cfg.OutputBitDepth >= 10 ? "10bit" : "8bit")})");
 
         // Maus-Sperre / Exclusive je nach output_mode
@@ -342,6 +387,8 @@ public sealed class MirrorEngine
                     // Schlafmodus-Sperre live an/aus, ohne Render-Neustart.
                     if (cfg.KeepAwake && !keepAwakeOn) { KeepAwakeBegin(); keepAwakeOn = true; }
                     else if (!cfg.KeepAwake && keepAwakeOn) { KeepAwakeEnd(); keepAwakeOn = false; }
+                    // Quellseitige Live-Parameter (z.B. WGC-Cursor-Aufnahme im Fenster-Modus).
+                    capture.ApplyLiveConfig(cfg);
                     Log("Config neu geladen (Live-Parameter).");
                 }
             }
@@ -349,9 +396,9 @@ public sealed class MirrorEngine
             try { capture.TryAcquire(context); }
             catch (Exception ex)
             {
-                // ACCESS_LOST o.ä. → erst schnelle Duplication-Wiederherstellung (transienter Fall).
-                Log("Capture verloren (" + ex.Message + ") → Duplication neu aufsetzen.");
-                if (!TryRecoverCapture(capture, src.Output))
+                // ACCESS_LOST o.ä. → erst schnelle Wiederherstellung der Quelle (transienter Fall).
+                Log("Bildquelle verloren (" + ex.Message + ") → neu aufsetzen.");
+                if (!TryRecoverCapture(capture))
                 {
                     // Bleibt sie tot (z.B. Device verloren, Cross-Adapter) → KEIN Weiterspinnen,
                     // sondern Session abbrechen → Supervisor baut die ganze Kette neu.
@@ -407,6 +454,13 @@ public sealed class MirrorEngine
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern ExecutionState SetThreadExecutionState(ExecutionState esFlags);
+
+    // Fensterrechteck (für die HDR-Erkennung im Fenster-Capture-Modus: auf welchem Monitor liegt es?).
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
     private void KeepAwakeBegin()
     {

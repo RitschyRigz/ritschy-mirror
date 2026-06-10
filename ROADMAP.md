@@ -1,5 +1,14 @@
 # Roadmap
 
+## Done in v1.3.0 ✓
+
+- **Window / fullscreen-app capture** — a second source mode next to whole-monitor capture, built
+  on **Windows.Graphics.Capture** (`WindowCapture` behind a new `ICaptureSource` seam, so the
+  tonemap/layout/present pipeline is unchanged). Mirrors a single window picked by stable identity
+  (exe + title, replug-proof like the monitor selection). Wired through Settings, the OBS dock,
+  the HTTP agent (`/windows`), and the Cockpit. No injection → anti-cheat-safe and cross-GPU
+  robust. Doesn't expose the desktop on alt-tab.
+
 ## Done in v1.2.2 ✓
 
 - **Self-healing capture** — when DXGI Desktop Duplication is lost (`DXGI_ERROR_ACCESS_LOST`:
