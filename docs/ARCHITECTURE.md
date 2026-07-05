@@ -59,6 +59,14 @@ device hiccup. Recovery is two-tiered so a transient loss never freezes the pict
    the cap. If recovery genuinely fails, the engine stops cleanly with `LastError` set rather than
    hanging. Config-/selection errors (no displays, configured monitor unplugged) are terminal
    (`SessionResult.Fatal`) and are *not* retried — they surface their exact message instead.
+3. **Window-procedure lifetime (`Win32Window`)** — the window class is registered **once per
+   process** against a **static** window procedure held in a `static` field (rooted for the whole
+   process), dispatching to the live instance by `HWND`. This closes a separate rare crash: an
+   *instance* delegate handed to Win32 as a native callback formed a self-referential window↔delegate
+   cycle the GC could collect mid-`DispatchMessage`, so Windows would invoke a freed callback and the
+   CLR `FailFast`ed (`callback on a garbage collected delegate`) — a hard, log-less process death,
+   made worse by every window after the first silently reusing the first window's delegate (a failed
+   re-`RegisterClassEx`). Unrelated to the capture-loss reinit above.
 
 ## Source files
 

@@ -1,5 +1,14 @@
 # Roadmap
 
+## Done in v1.3.1 ✓
+
+- **Fixed a rare mid-stream `FailFast` crash in the window message pump.** The window procedure's
+  delegate could be GC-collected while Windows was still dispatching to it (window and delegate
+  formed a self-referential cycle), and a class-registration quirk made later windows reuse the
+  first window's delegate. Replaced with a **process-wide static window procedure** (registered
+  once, dispatch by HWND), eliminating both the collectible cycle and the dangling-pointer path.
+  Distinct from the v1.2.2 capture-loss crash.
+
 ## Done in v1.3.0 ✓
 
 - **Window / fullscreen-app capture** — a second source mode next to whole-monitor capture, built

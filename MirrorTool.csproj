@@ -20,7 +20,7 @@
     <AssemblyName>RitschyMirror</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\app.ico</ApplicationIcon>
-    <Version>1.3.0</Version>
+    <Version>1.3.1</Version>
     <Product>RitschyMirror</Product>
     <Company>RitschyRigz</Company>
     <Description>Screen Mirror Tool for capture cards (HDR-to-SDR tonemapping)</Description>

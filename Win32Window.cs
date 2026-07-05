@@ -12,8 +12,23 @@ public sealed class Win32Window
     public IntPtr Hwnd { get; private set; }
     public bool Running { get; private set; } = true;
 
-    // Delegate muss als Feld gehalten werden, sonst sammelt der GC ihn ein -> Crash.
-    private readonly WndProcDelegate _wndProcDelegate;
+    // Fensterklasse-WndProc: EINMAL pro Prozess registriert, Funktionszeiger auf einen STATISCHEN
+    // Delegate, der als static-Feld die ganze Prozess-Lebensdauer gewurzelt ist → GC kann ihn nie
+    // einsammeln. Zwei zuvor latente Crash-Ursachen sind damit weg (Fix v1.3.1, Stream-Crash 01:17):
+    //  (1) frueher war der Delegate ein INSTANZ-Feld → Fenster<->Delegate bildeten einen
+    //      selbstreferenziellen, GC-einsammelbaren Zyklus; wurde er mitten in DispatchMessage
+    //      eingesammelt (JIT haelt "this" nicht laenger lebendig als noetig), rief Windows einen
+    //      toten Delegate auf → CLR-FailFast "callback on a garbage collected delegate" (harter
+    //      Prozess-Tod OHNE Log-Zeile — exakt das 01:17-Muster).
+    //  (2) RegisterClassEx wurde bei jedem Fenster erneut versucht, scheiterte aber ab dem 2. still
+    //      (Klasse existiert schon) → ALLE Fenster teilten den Delegate des ERSTEN; endete dessen
+    //      Instanz nach einem Reinit, dangelte der Klassen-Zeiger fuer alle spaeteren Fenster.
+    // Loesung: ein prozess-weiter statischer WndProc, der per HWND→Instanz an das richtige Fenster
+    // dispatcht (unbekanntes HWND → DefWindowProc, nie ein Aufruf auf etwas Totes).
+    private static readonly WndProcDelegate s_wndProc = StaticWndProc;
+    private static readonly object s_lock = new();
+    private static readonly Dictionary<IntPtr, Win32Window> s_windows = new();
+    private static bool s_classRegistered;
     private const string ClassName = "RitschyMirrorWindowClass";
 
     // ── Maus-Sperre (output_mode "fullscreen_block") ─────────────────────
@@ -29,19 +44,25 @@ public sealed class Win32Window
 
     public Win32Window(string title, int x, int y, int width, int height, bool borderless)
     {
-        _wndProcDelegate = WndProc;
-
-        var wc = new WNDCLASSEX
+        // Klasse nur EINMAL pro Prozess registrieren (statischer WndProc, s. Feld-Kommentar oben).
+        lock (s_lock)
         {
-            cbSize = Marshal.SizeOf<WNDCLASSEX>(),
-            style = 0x0002 | 0x0001, // CS_HREDRAW | CS_VREDRAW
-            lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
-            hInstance = GetModuleHandle(null),
-            hCursor = LoadCursor(IntPtr.Zero, 32512), // IDC_ARROW
-            hbrBackground = IntPtr.Zero,
-            lpszClassName = ClassName,
-        };
-        RegisterClassEx(ref wc);
+            if (!s_classRegistered)
+            {
+                var wc = new WNDCLASSEX
+                {
+                    cbSize = Marshal.SizeOf<WNDCLASSEX>(),
+                    style = 0x0002 | 0x0001, // CS_HREDRAW | CS_VREDRAW
+                    lpfnWndProc = Marshal.GetFunctionPointerForDelegate(s_wndProc),
+                    hInstance = GetModuleHandle(null),
+                    hCursor = LoadCursor(IntPtr.Zero, 32512), // IDC_ARROW
+                    hbrBackground = IntPtr.Zero,
+                    lpszClassName = ClassName,
+                };
+                RegisterClassEx(ref wc);
+                s_classRegistered = true;
+            }
+        }
 
         // Borderless (WS_POPUP) fuer Vollbild, sonst overlapped Fenster.
         uint style = borderless ? 0x80000000 /*WS_POPUP*/ : 0x00CF0000 /*WS_OVERLAPPEDWINDOW*/;
@@ -51,6 +72,7 @@ public sealed class Win32Window
             exStyle, ClassName, title, style,
             x, y, width, height,
             IntPtr.Zero, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero);
+        if (Hwnd != IntPtr.Zero) { lock (s_lock) s_windows[Hwnd] = this; }
 
         ShowWindow(Hwnd, 5 /*SW_SHOW*/);
         UpdateWindow(Hwnd);
@@ -78,7 +100,11 @@ public sealed class Win32Window
         DisableCursorBlock();
         var h = Hwnd;
         Hwnd = IntPtr.Zero;
-        if (h != IntPtr.Zero) DestroyWindow(h); // synchron → WM_DESTROY → PostQuitMessage(0)
+        if (h != IntPtr.Zero)
+        {
+            lock (s_lock) s_windows.Remove(h);
+            DestroyWindow(h); // synchron → WM_DESTROY → PostQuitMessage(0)
+        }
         // Das von WM_DESTROY gepostete WM_QUIT (und Restnachrichten) hier am Thread abraeumen,
         // sonst beendet es beim naechsten PumpMessages sofort die frische Session.
         while (PeekMessage(out _, IntPtr.Zero, 0, 0, 1 /*PM_REMOVE*/)) { }
@@ -159,7 +185,18 @@ public sealed class Win32Window
         return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
     }
 
-    private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    // Prozess-weiter Dispatcher: findet die Instanz zum HWND und reicht weiter. Unbekanntes HWND
+    // (z. B. Restnachricht nach Destroy) → DefWindowProc, nie ein Aufruf auf etwas Totes.
+    private static IntPtr StaticWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        Win32Window? self;
+        lock (s_lock) s_windows.TryGetValue(hWnd, out self);
+        return self != null
+            ? self.InstanceWndProc(hWnd, msg, wParam, lParam)
+            : DefWindowProc(hWnd, msg, wParam, lParam);
+    }
+
+    private IntPtr InstanceWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         switch (msg)
         {
@@ -169,6 +206,7 @@ public sealed class Win32Window
                 return IntPtr.Zero;
             case 0x0002: // WM_DESTROY
                 Running = false;
+                lock (s_lock) s_windows.Remove(hWnd);
                 DisableCursorBlock();
                 PostQuitMessage(0);
                 return IntPtr.Zero;

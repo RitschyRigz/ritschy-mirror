@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.3.1 — fix a rare mid-stream crash (window message pump)
+
+- **Fixed a rare hard crash that could kill the mirror mid-stream.** On long sessions the app could
+  vanish instantly (no error dialog, you had to relaunch it), most often after the render pipeline
+  had been rebuilt one or more times. This is *not* the capture-loss crash fixed in v1.2.2 — it was
+  a separate issue in the window message loop.
+- **Root cause.** The window procedure is handed to Windows as a native callback, but the delegate
+  backing it could be garbage-collected while Windows was still dispatching messages to the window
+  (window and delegate referenced only each other — a cycle the GC is free to collect). When that
+  happened, the next window message invoked a freed callback and .NET terminated the process
+  immediately (`FailFast: callback on a garbage collected delegate`). A second, related flaw meant
+  every window after the first silently reused the first window's callback, so once that first
+  window's session ended the pointer could dangle for all later windows.
+- **The fix.** The window class is now registered **once per process** against a **static** window
+  procedure that lives for the entire process and dispatches to the right window by its handle. The
+  collectible cycle is gone, so this class of crash can no longer occur — no matter how many times
+  the pipeline rebuilds during a stream.
+
 ## v1.3.0 — mirror a single window or fullscreen app (not just the whole screen)
 
 - **New "window" source mode.** Instead of mirroring a whole monitor, you can now mirror **one
