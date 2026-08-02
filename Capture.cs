@@ -45,10 +45,26 @@ public sealed class DuplicationCapture : ICaptureSource
         var desc = output.Description1;
         Width = desc.DesktopCoordinates.Right - desc.DesktopCoordinates.Left;
         Height = desc.DesktopCoordinates.Bottom - desc.DesktopCoordinates.Top;
-        InputIsHdr = desc.ColorSpace == ColorSpaceType.RgbFullG10NoneP709
-                  || desc.ColorSpace == ColorSpaceType.RgbFullG2084NoneP2020;
+        InputIsHdr = ReadHdrState();
         _dup = output.DuplicateOutput1(_device, 1, new[] { Format.R16G16B16A16_Float });
     }
+
+    /// <summary>Aktuellen HDR-Zustand des Outputs lesen. Nicht lesbar (Output gerade im
+    /// Moduswechsel) → letzten bekannten Zustand behalten, statt kurz falsch umzuschalten.</summary>
+    private bool ReadHdrState()
+    {
+        try
+        {
+            var cs = _output.Description1.ColorSpace;
+            return cs == ColorSpaceType.RgbFullG10NoneP709
+                || cs == ColorSpaceType.RgbFullG2084NoneP2020;
+        }
+        catch { return InputIsHdr; }
+    }
+
+    /// <summary>HDR am Monitor an/aus wird im Betrieb nachgezogen — sonst rechnet der Shader nach
+    /// einem Umschalten mit der falschen Quell-Kennlinie weiter (zu dunkel bzw. ausgefressen).</summary>
+    public void RefreshSourceState() => InputIsHdr = ReadHdrState();
 
     /// <summary>True wenn ein neues Frame geholt+kopiert wurde; false bei Timeout.
     /// Ist die Duplication (nach fehlgeschlagenem Recreate) tot, liefert die Methode false,
@@ -194,6 +210,9 @@ public sealed class DuplicationCapture : ICaptureSource
         try
         {
             _dup = _output.DuplicateOutput1(_device, 1, new[] { Format.R16G16B16A16_Float });
+            // Haeufigster Ausloeser fuer ACCESS_LOST ist ein Moduswechsel — z.B. HDR an/aus.
+            // Also den Quell-Zustand hier zwingend neu lesen, nicht den alten mitschleppen.
+            RefreshSourceState();
             return true;
         }
         catch

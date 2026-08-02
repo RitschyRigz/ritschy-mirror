@@ -148,6 +148,11 @@ public sealed class WindowCapture : ICaptureSource
         }
     }
 
+    /// <summary>No-op: der HDR-Zustand kommt hier vom Monitor, auf dem das Fenster BEIM START lag
+    /// (die Fensterwahl ist ohnehin ein Struktur-Parameter). Fenster auf einen Monitor mit anderem
+    /// HDR-Zustand geschoben → Render-Neustart. Beim Monitor-Capture wird live nachgezogen.</summary>
+    public void RefreshSourceState() { }
+
     /// <summary>Live-Config anwenden: Cursor-Aufnahme der WGC-Session ohne Neustart umschalten.</summary>
     public void ApplyLiveConfig(MirrorConfig cfg)
     {

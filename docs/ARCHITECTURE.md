@@ -5,7 +5,7 @@ Internal/technical documentation. For the user-facing overview see the main
 
 ## Pipeline
 
-**DXGI Desktop Duplication** (FP16, HDR/scRGB) → **HLSL tonemap shader**
+**DXGI Desktop Duplication** (FP16, always linear scRGB) → **HLSL tonemap shader**
 (`bt2390` / `reinhard` / `hable` / `aces`) → layout/crop composite → **flip-model
 swap chain** (8- or 10-bit). The render device is created on the **source adapter**
 (Desktop Duplication is adapter-bound); when the target display hangs off a
@@ -14,10 +14,44 @@ different GPU, the DWM performs the cross-adapter transfer in borderless mode.
 Per-Monitor-V2 DPI awareness is set programmatically (`SetProcessDpiAwarenessContext`),
 so capture/display geometry is in real pixels and not distorted by Windows scaling.
 
+## Colour pipeline — HDR vs SDR source
+
+Two properties of the source are easy to conflate, and conflating them is exactly what made
+an SDR source come out far too dark before v1.3.2:
+
+1. **Encoding of the captured buffer.** Both capture sources request
+   `R16G16B16A16_FLOAT`, and that buffer is **always linear scRGB — also when the display is
+   in SDR mode**. This is measured, not assumed: painting sRGB greys 255/192/128/64 on an SDR
+   display and reading the duplicated FP16 buffer back yields `1.0000 / 0.5273 / 0.2158 /
+   0.0513`, i.e. exactly `srgb_to_linear(v)`. Never sRGB-decode this buffer — that applies a
+   second gamma and the output ends up at the *linear* value (mid-grey 128 → 55).
+2. **Value range.** Whether anything reaches above the white point. That depends on the
+   display's HDR state, which is what `ICaptureSource.InputIsHdr` reports.
+
+The shader therefore takes three explicit inputs instead of one overloaded `InputIsHdr` flag,
+computed in `Renderer.ResolveSourceLight`:
+
+| cbuffer field | HDR source | SDR source |
+|---|---|---|
+| `SrcIsLinear` | `1` — no sRGB decode (both sources deliver FP16) | `1` |
+| `SrcScale` — buffer value → working light, `1.0` = white point | `80 / target_paperwhite` (scRGB: `1.0` = 80 nits) | `1.0` (white already *is* the white point) |
+| `SrcPeak` — source peak in white-point units | `max(source_peak_nits / target_paperwhite, 1)` | `1.0` |
+
+Tone mapping runs only when `SrcPeak > 1`, so an SDR source is passed through 1:1 instead of
+being squashed a second time. Consequence: **`source_peak_nits` and `target_paperwhite` only
+affect an HDR source**; with an SDR source only exposure/saturation/contrast/gamma do anything.
+
+`InputIsHdr` is re-read at runtime via `ICaptureSource.RefreshSourceState()` — periodically from
+the render loop and after every `Recover()`, since a display mode change (HDR on/off is one) is
+the most common cause of capture loss. Toggling HDR therefore no longer needs a render restart.
+`WindowCapture` implements it as a no-op: its HDR state comes from the monitor the window sat on
+at start, and the window selection is a structural parameter anyway.
+
 ## Capture sources
 
 The thing being mirrored sits behind a small seam, `ICaptureSource` (a FP16 SRV + size +
-HDR flag + cursor info + `TryAcquire`/`Recover`/`ApplyLiveConfig`). Everything downstream —
+HDR flag + cursor info + `TryAcquire`/`Recover`/`ApplyLiveConfig`/`RefreshSourceState`).
+Everything downstream —
 tonemap, layout, crop, present — is identical regardless of source, so adding a source type
 doesn't touch the renderer or the engine loop. `capture_mode` (structural) selects which:
 
@@ -77,7 +111,7 @@ device hiccup. Recovery is two-tiered so a transient loss never freezes the pict
 | `SettingsForm.cs` | Local settings GUI (all parameters) |
 | `MirrorEngine.cs` | Render loop (start/stop), display enumeration, live config reload |
 | `Renderer.cs` | Swap chain + layout/crop geometry + shader pipeline (consumes `ICaptureSource`) |
-| `ICaptureSource.cs` | Capture-source seam (FP16 SRV + size/HDR/cursor + acquire/recover) |
+| `ICaptureSource.cs` | Capture-source seam (FP16 SRV + size/HDR/cursor + acquire/recover/refresh) |
 | `Capture.cs` | `DuplicationCapture` — DXGI Desktop Duplication (incl. optional cursor compositing) |
 | `WindowCapture.cs` | `WindowCapture` — single window / fullscreen app via Windows.Graphics.Capture |
 | `WindowEnum.cs` | Enumerate capturable windows + resolve a saved window by stable identity (exe+title) |
@@ -98,6 +132,9 @@ remote controller all write the same file; the render loop reads it live.
 **Live keys** (apply immediately): `tonemap_enabled`, `operator`, `source_peak_nits`,
 `target_paperwhite`, `exposure`, `saturation`, `contrast`, `gamma`, `content_offset_y`,
 `vsync`, `layout_mode`, `crop_x`, `crop_y`, `crop_w`, `crop_h`, `show_cursor`, `keep_awake`.
+
+`tonemap_enabled`, `operator`, `source_peak_nits` and `target_paperwhite` are only in effect for
+an **HDR** source — see [Colour pipeline](#colour-pipeline--hdr-vs-sdr-source).
 
 `keep_awake` (default `true`) holds off display power-off + system sleep while the mirror is
 running, via `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)`

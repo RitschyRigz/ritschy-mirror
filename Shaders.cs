@@ -15,18 +15,19 @@ SamplerState Smp : register(s0);
 cbuffer Params : register(b0)
 {
     float Exposure;          // Belichtung in Stops
-    float SourcePeakNits;    // angenommene Quell-Spitze
-    float TargetPaperwhite;  // SDR-Weisspunkt in nits
+    float SrcPeak;           // Quell-Spitzenluminanz in WEISSPUNKT-Einheiten (1.0 = kein Headroom)
+    float TargetPaperwhite;  // SDR-Weisspunkt in nits (nur noch fuer den HDR-Ausgabe-Pfad)
     float Saturation;
     float Contrast;
     float Gamma;
     int   OperatorId;        // 0 bt2390, 1 reinhard, 2 hable, 3 aces
     int   TonemapEnabled;    // 0/1
-    int   InputIsHdr;        // 1 = scRGB linear (1.0 = 80 nits)
+    int   SrcIsLinear;       // 1 = Puffer ist bereits linear (FP16/scRGB), 0 = sRGB-kodiert
     int   OutputIsHdr;       // 1 = HDR-Passthrough (kein Tonemap, scRGB raus)
     float2 CropMin;          // Quell-Crop in UV (0..1), Default (0,0)
     float2 CropMax;          // Quell-Crop in UV (0..1), Default (1,1)
-    float2 _pad;
+    float SrcScale;          // Puffer-Wert → Arbeitslicht (1.0 = Weisspunkt)
+    float _pad;
 };
 
 struct VSOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
@@ -89,17 +90,25 @@ float4 PSMain(VSOut i) : SV_Target
     float2 suv = CropMin + i.uv * (CropMax - CropMin);
     float3 col = Src.Sample(Smp, suv).rgb;
 
-    // Eingangsfarbraum -> lineares Arbeitslicht (1.0 = Weisspunkt)
-    if (InputIsHdr)
-        col = max(col, 0) * 80.0 / TargetPaperwhite; // scRGB nits / Weisspunkt
+    // Eingangsfarbraum -> lineares Arbeitslicht (1.0 = Weisspunkt).
+    // WICHTIG: DXGI Desktop Duplication und WGC liefern mit R16G16B16A16_FLOAT IMMER
+    // lineares scRGB — auch wenn der Monitor im SDR-Modus laeuft (nachgemessen). Ein
+    // sRGB-Dekodieren waere dort ein ZWEITES Gamma und macht das Bild dramatisch zu
+    // dunkel. Dekodiert wird also nur ein wirklich sRGB-kodierter Puffer (8-bit-Quellen).
+    if (SrcIsLinear)
+        col = max(col, 0);
     else
-        col = SrgbToLinear(saturate(col));            // SDR display-referred
+        col = SrgbToLinear(saturate(col));
+    col *= SrcScale;   // scRGB: 80/Weisspunkt · SDR-Quelle: 1.0 (Weiss ist schon Weiss)
 
     col *= exp2(Exposure);
 
-    if (TonemapEnabled && !OutputIsHdr)
+    // Tonemapping nur, wenn die Quelle ueberhaupt Headroom UEBER dem Weisspunkt hat.
+    // Eine SDR-Quelle (SrcPeak == 1) hat keinen — sie zu rollen wuerde ein bereits
+    // fertiges 1:1-Bild bloss abdunkeln. So merkt der Tonemapper selbst, ob HDR anliegt.
+    if (TonemapEnabled && !OutputIsHdr && SrcPeak > 1.0001)
     {
-        float wp = max(SourcePeakNits / max(TargetPaperwhite, 1.0), 1.0);
+        float wp = SrcPeak;
         if      (OperatorId == 1) col = TmReinhard(col, wp);
         else if (OperatorId == 2) col = Hable(col, wp);
         else if (OperatorId == 3) col = TmAces(col);

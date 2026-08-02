@@ -19,8 +19,17 @@ public interface ICaptureSource : IDisposable
     int Width { get; }
     int Height { get; }
 
-    /// <summary>True, wenn die Quelle HDR liefert → der Tonemap-Shader rollt die Highlights.</summary>
+    /// <summary>True, wenn die Quelle HDR liefert → der Tonemap-Shader rollt die Highlights.
+    /// Bei false ist das Bild bereits SDR und wird 1:1 durchgereicht (kein Tonemapping).
+    /// ⚠ Das beschreibt den WERTEBEREICH, nicht die Kodierung: beide Quellen liefern
+    /// R16G16B16A16_FLOAT und damit immer LINEARES scRGB — auch im SDR-Modus.</summary>
     bool InputIsHdr { get; }
+
+    /// <summary>Quellseitigen Zustand neu einlesen, der sich im Betrieb aendern kann — vor allem
+    /// HDR an/aus am Monitor. Wird periodisch und nach jeder <see cref="Recover"/> aufgerufen,
+    /// damit ein HDR-Umschalten nicht bis zum naechsten Render-Neustart mit der falschen
+    /// Farbmathematik weiterlaeuft. Quellen ohne aenderbaren Zustand: No-op.</summary>
+    void RefreshSourceState();
 
     /// <summary>Shader-lesbare Kopie des letzten Frames (R16G16B16A16_Float). null = noch kein Frame.</summary>
     ID3D11ShaderResourceView? Srv { get; }

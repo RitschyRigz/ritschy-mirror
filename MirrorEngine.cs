@@ -339,6 +339,9 @@ public sealed class MirrorEngine
         Log("Schritt: Renderer/Swapchain...");
         var renderer = new Renderer(factory, device, context, window.Hwnd, outW, outH, cfg.OutputBitDepth);
         Log($"Capture {capture.Width}x{capture.Height} HDR={capture.InputIsHdr} → Ausgabe {outW}x{outH} ({(cfg.OutputBitDepth >= 10 ? "10bit" : "8bit")})");
+        Log(capture.InputIsHdr
+            ? $"Quelle ist HDR → Tonemapping {(cfg.TonemapEnabled ? "aktiv" : "AUS")} (Spitze {cfg.SourcePeakNits:F0} nits auf Weisspunkt {cfg.TargetPaperwhite:F0} nits)."
+            : "Quelle ist SDR → 1:1-Durchreichung, kein Tonemapping (source_peak_nits/target_paperwhite wirken hier nicht).");
 
         // Maus-Sperre / Exclusive je nach output_mode
         bool exclusive = false;
@@ -359,6 +362,7 @@ public sealed class MirrorEngine
         if (cfg.KeepAwake) { KeepAwakeBegin(); keepAwakeOn = true; }
 
         DateTime lastCfgWrite = SafeWriteTime();
+        bool lastSrcHdr = capture.InputIsHdr;
         int frame = 0;
         long framesRendered = 0;
         var sessionResult = SessionResult.Stopped;  // sauberer Default: Fenster zu / Stop()
@@ -390,6 +394,21 @@ public sealed class MirrorEngine
                     // Quellseitige Live-Parameter (z.B. WGC-Cursor-Aufnahme im Fenster-Modus).
                     capture.ApplyLiveConfig(cfg);
                     Log("Config neu geladen (Live-Parameter).");
+                }
+            }
+
+            // HDR am Monitor an/aus im Betrieb nachziehen (ca. alle 256 Frames). Ohne das rechnet
+            // der Shader nach einem Umschalten mit der falschen Quell-Kennlinie weiter: HDR-Quelle
+            // als SDR = ausgefressen, SDR-Quelle als HDR = zu dunkel.
+            if ((frame & 255) == 0)
+            {
+                capture.RefreshSourceState();
+                if (capture.InputIsHdr != lastSrcHdr)
+                {
+                    lastSrcHdr = capture.InputIsHdr;
+                    Log(lastSrcHdr
+                        ? "Quelle wechselte auf HDR → Tonemapping-Pfad aktiv."
+                        : "Quelle wechselte auf SDR → 1:1-Durchreichung, kein Tonemapping.");
                 }
             }
 

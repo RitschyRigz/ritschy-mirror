@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.1-2ea0c9">
+  <img src="https://img.shields.io/badge/version-1.3.2-2ea0c9">
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20(x64)-2ea0c9">
   <img src="https://img.shields.io/badge/license-MIT-3aa757">
   <img src="https://img.shields.io/badge/.NET-9-512bd4">
@@ -56,7 +56,9 @@ sends the result to the display your capture card is plugged into.
   into the capture card. Built on Windows.Graphics.Capture (the modern OS API, *not* injection →
   no anti-cheat risk, robust even when capture and game live on different GPUs).
 - 🌈 **HDR → SDR tonemapping** on the GPU (`bt2390`, `reinhard`, `hable`, `aces`) with **live**
-  exposure / saturation / contrast / gamma / paper-white controls.
+  exposure / saturation / contrast / gamma / paper-white controls. Applied **only when the source
+  really is HDR** — an SDR source is passed through 1:1, and turning HDR on or off is picked up
+  while the mirror is running.
 - 🖼️ **Layout modes** — how the source fills the output:
   - `fit` — whole source, aspect-preserved, nothing cut off (true 1:1 mirror)
   - `stretch` — fill the frame (ignore aspect)
@@ -87,7 +89,7 @@ sends the result to the display your capture card is plugged into.
 ## Download & Install
 
 1. Go to the [**Releases**](https://github.com/RitschyRigz/ritschy-mirror/releases) page and
-   download **`RitschyMirror-Setup-1.3.1.exe`**.
+   download **`RitschyMirror-Setup-1.3.2.exe`**.
 2. Run it. It installs **per-user — no admin / UAC prompt** (like the VS Code user installer),
    into `…\AppData\Local\Programs\RitschyMirror`.
 3. Pick your options (desktop icon, auto-start), finish, and the app starts in your tray.

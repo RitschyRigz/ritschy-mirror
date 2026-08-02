@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.3.2 — fix a badly darkened picture when the source monitor is in SDR mode
+
+- **Fixed: with HDR turned off on the source monitor, the mirrored picture came out far too dark.**
+  Highlights survived, but midtones and shadows were crushed — a mid-grey left the mirror at roughly
+  40 % of its real brightness, a dark grey at 20 %. Games looked murky and washed out. Turning the
+  tone mapper off did **not** help, because the darkening happened before tone mapping.
+- **Root cause: one gamma too many.** Screen capture (both the monitor and the window source) hands
+  us 16-bit float frames, and those are **always in a linear colour space — including when the
+  display is in SDR mode**. The renderer assumed an SDR display meant gamma-encoded pixels and
+  decoded them a second time, so every value was effectively raised to the power of 2.2.
+- **Fixed: the tone mapper no longer squashes an SDR source.** It used to roll highlights against
+  the configured HDR source peak even when the source had no HDR range at all, dimming pure white
+  to about 75 %. It now derives its range from the source that is actually connected: HDR source →
+  roll off as before, SDR source → pass the picture straight through, untouched.
+- **Fixed: switching HDR on or off is now noticed while the mirror is running.** Previously the
+  source's HDR state was only read when the mirror started, so toggling HDR mid-session kept the
+  wrong colour maths running until you restarted the mirror. It is now re-checked continuously and
+  after every capture recovery, and the change is written to the log.
+- **Nothing changes for an HDR source** — that path is mathematically identical to v1.3.1. The one
+  exception: if you set the source peak at or below the white point, tone mapping is now skipped
+  instead of applied at a neutral setting (with the `hable` and `aces` operators that was never
+  truly neutral).
+- **Note:** `source peak` and `white point` only affect an HDR source. With an SDR source the
+  picture is passed through 1:1 and those two sliders do nothing — use exposure, contrast, gamma
+  and saturation to grade it.
+
 ## v1.3.1 — fix a rare mid-stream crash (window message pump)
 
 - **Fixed a rare hard crash that could kill the mirror mid-stream.** On long sessions the app could

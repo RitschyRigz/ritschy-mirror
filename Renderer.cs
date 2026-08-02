@@ -16,10 +16,10 @@ public sealed class Renderer : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     private struct ShaderParams
     {
-        public float Exposure, SourcePeakNits, TargetPaperwhite, Saturation, Contrast, Gamma;
-        public int OperatorId, TonemapEnabled, InputIsHdr, OutputIsHdr;
+        public float Exposure, SrcPeak, TargetPaperwhite, Saturation, Contrast, Gamma;
+        public int OperatorId, TonemapEnabled, SrcIsLinear, OutputIsHdr;
         public float CropMinX, CropMinY, CropMaxX, CropMaxY;
-        public float Pad0, Pad1;
+        public float SrcScale, Pad0;
     }
 
     private readonly ID3D11Device _device;
@@ -109,20 +109,25 @@ public sealed class Renderer : IDisposable
         int srcW = cap.Width, srcH = cap.Height;
         var (vp, cropMinX, cropMinY, cropMaxX, cropMaxY) = ComputeLayout(srcW, srcH, cfg);
 
+        var (srcScale, srcPeak) = ResolveSourceLight(cap.InputIsHdr, cfg);
+
         var p = new ShaderParams
         {
             Exposure = cfg.Exposure,
-            SourcePeakNits = cfg.SourcePeakNits,
+            SrcPeak = srcPeak,
             TargetPaperwhite = cfg.TargetPaperwhite,
             Saturation = cfg.Saturation,
             Contrast = cfg.Contrast,
             Gamma = cfg.Gamma,
             OperatorId = cfg.OperatorId,
             TonemapEnabled = cfg.TonemapEnabled ? 1 : 0,
-            InputIsHdr = cap.InputIsHdr ? 1 : 0,
+            // Beide Quellen (Desktop Duplication + WGC) liefern R16G16B16A16_FLOAT und damit
+            // IMMER lineares scRGB — unabhaengig vom HDR-Modus des Monitors.
+            SrcIsLinear = 1,
             OutputIsHdr = 0, // SDR-Ausgabe (Passthrough-HDR ist Phase 2)
             CropMinX = cropMinX, CropMinY = cropMinY,
             CropMaxX = cropMaxX, CropMaxY = cropMaxY,
+            SrcScale = srcScale,
         };
         _ctx.UpdateSubresource(p, _cbuffer);
 
@@ -221,6 +226,24 @@ public sealed class Renderer : IDisposable
             }
         }
         return (vp, cMinX, cMinY, cMaxX, cMaxY);
+    }
+
+    /// <summary>
+    /// Aus dem Zustand der Quelle die zwei Groessen ableiten, mit denen der Shader rechnet —
+    /// statt „HDR" als Sonderfall im Shader zu verdrahten:
+    ///   Scale — Faktor vom Pufferwert aufs Arbeitslicht, wo 1.0 der Weisspunkt ist.
+    ///           HDR/scRGB: 1.0 im Puffer sind 80 nits → auf target_paperwhite normieren.
+    ///           SDR-Quelle: Weiss im Puffer IST schon der Weisspunkt → 1.0 = 1:1 durchreichen.
+    ///   Peak  — wie weit die Quelle ueber den Weisspunkt hinausreicht (Tonemap-Headroom).
+    ///           HDR: source_peak_nits / target_paperwhite (mind. 1.0).
+    ///           SDR: 1.0 = kein Headroom → das Tonemapping faellt von selbst weg, statt ein
+    ///           bereits fertiges SDR-Bild ein zweites Mal zu komprimieren.
+    /// </summary>
+    private static (float Scale, float Peak) ResolveSourceLight(bool srcIsHdr, MirrorConfig cfg)
+    {
+        if (!srcIsHdr) return (1f, 1f);
+        float paperwhite = System.Math.Max(cfg.TargetPaperwhite, 1f);
+        return (80f / paperwhite, System.Math.Max(cfg.SourcePeakNits / paperwhite, 1f));
     }
 
     public void Present(bool vsync) => _swapChain.Present(vsync ? 1u : 0u, PresentFlags.None);

@@ -1,5 +1,20 @@
 # Roadmap
 
+## Done in v1.3.2 ✓
+
+- **Correct colour maths for an SDR source.** DXGI Desktop Duplication and Windows.Graphics.Capture
+  return `R16G16B16A16_FLOAT` frames in **linear scRGB regardless of the display's HDR state**
+  (measured, not assumed). The shader used to sRGB-decode that buffer whenever the display reported
+  SDR, applying a second gamma and crushing the picture (mid-grey 128 → 55). The shader's input
+  contract is now explicit — `SrcIsLinear` (buffer encoding) and `SrcScale` (buffer value → white
+  point) instead of one overloaded `InputIsHdr` flag.
+- **Tone mapping derives its range from the source.** New `SrcPeak`, the source peak expressed in
+  white-point units: HDR → `source_peak_nits / target_paperwhite`, SDR → `1.0`, i.e. no head-room,
+  so the operator is skipped instead of squashing an already-finished SDR picture.
+- **Live HDR re-detection.** New `ICaptureSource.RefreshSourceState()`, called periodically from the
+  render loop and after every `Recover()` — a mode change is the most common cause of capture loss,
+  and HDR on/off is exactly such a change. Toggling HDR no longer needs a render restart.
+
 ## Done in v1.3.1 ✓
 
 - **Fixed a rare mid-stream `FailFast` crash in the window message pump.** The window procedure's
